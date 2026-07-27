@@ -1,0 +1,36 @@
+{
+  "name": "bc-harness",
+  "version": "0.3.0",
+  "description": "Beer and Code harness — structured project discovery, specification, planning, context, and validated autonomous execution.",
+  "author": {
+    "name": "Beer and Code",
+    "email": "administrador@beerandcode.com.br",
+    "url": "https://github.com/beerandcodeteam"
+  },
+  "homepage": "https://github.com/beerandcodeteam/beer-and-code-harness",
+  "repository": "https://github.com/beerandcodeteam/beer-and-code-harness",
+  "license": "MIT",
+  "keywords": [
+    "harness",
+    "planning",
+    "specification",
+    "coding-agent"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Beer and Code Harness",
+    "shortDescription": "Plan and execute software projects with mechanical gates.",
+    "longDescription": "Discover a project's stack, create implementation-ready specifications and plans, maintain agent context, and execute phases through a validated autonomous loop.",
+    "developerName": "Beer and Code",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Initialize this project with Beer and Code Harness.",
+      "Create a formal specification and phased plan for this feature.",
+      "Refresh this repository's agent context documentation."
+    ]
+  }
+}

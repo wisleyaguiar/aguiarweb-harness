@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Project Phases"
+  short_description: "Turn project specs into executable phases."
+  default_prompt: "Use $bc-harness-init-project-phases to generate implementation phases."

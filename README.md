@@ -2,7 +2,7 @@
 
 > 🇧🇷 [Documentação em português](README.pt-BR.md)
 
-A [Claude Code](https://claude.com/claude-code) plugin with commands, agents, and scripts that take a project from idea to implementation in a structured way: formal specification, phased planning, and autonomous execution with mechanical validation — while keeping a human in control at every decision point.
+A plugin for [Claude Code](https://claude.com/claude-code) and [OpenAI Codex](https://developers.openai.com/codex/) with commands, skills, agents, and scripts that take a project from idea to implementation in a structured way: formal specification, phased planning, and autonomous execution with mechanical validation — while keeping a human in control at every decision point.
 
 The harness is **stack-agnostic**: language, framework, commands, and conventions are defined by the project's own documents (`AGENTS.md`, `CLAUDE.md`, the `.spec/` chain), never by the harness.
 
@@ -38,7 +38,9 @@ Cross-cutting: **`/ai-context`** keeps the context tree (`AGENTS.md`, `CLAUDE.md
 
 ## Installation
 
-This repository is a Claude Code plugin (`.claude-plugin/plugin.json`). Install it via marketplace/local path according to your plugin setup:
+### Claude Code
+
+Install from the Claude marketplace or a local path:
 
 ```
 /plugin install bc-harness
@@ -46,11 +48,34 @@ This repository is a Claude Code plugin (`.claude-plugin/plugin.json`). Install 
 
 Commands are namespaced: `/bc-harness:init`, `/bc-harness:plan`, etc. (abbreviated without the namespace throughout this document).
 
+### Codex
+
+Add the Git marketplace and install the plugin:
+
+```bash
+codex plugin marketplace add beerandcodeteam/beer-and-code-harness --ref main
+codex plugin add bc-harness@beer-and-code
+```
+
+Start a new Codex conversation after installation. Open `/hooks` once to review and trust the bundled `sail-guard` hook.
+
+| Workflow | Claude Code | Codex |
+|---|---|---|
+| Init router | `/bc-harness:init` | `$bc-harness-init` |
+| Project description | `/bc-harness:init:project-description` | `$bc-harness-init-project-description` |
+| User stories | `/bc-harness:init:user-stories` | `$bc-harness-init-user-stories` |
+| Data/content model | `/bc-harness:init:database-schema` | `$bc-harness-init-database-schema` |
+| Project phases | `/bc-harness:init:project-phases` | `$bc-harness-init-project-phases` |
+| Feature planning | `/bc-harness:plan` | `$bc-harness-plan` |
+| Agent context | `/bc-harness:ai-context` | `$bc-harness-ai-context` |
+
+The command sections below use the shorter Claude syntax; both hosts execute the same canonical workflow files.
+
 `ralph.sh` is a standalone bash script — copy or reference `scripts/ralph.sh` and run it directly in the target project's repository.
 
 **ralph.sh prerequisites:**
 
-- Codex engine: `npm install -g @openai/codex` + `OPENAI_API_KEY`
+- Codex engine: `npm install -g @openai/codex` + `codex login` (ChatGPT or API key)
 - Claude engine: `npm install -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY`
 - Root of a git repository with a **clean** working tree
 
@@ -237,7 +262,8 @@ The two `/ai-context` writers run in parallel (disjoint files, read-only digest)
 ## Repository structure
 
 ```
-.claude-plugin/plugin.json     plugin manifest
+.claude-plugin/plugin.json     Claude plugin manifest
+.codex-plugin/plugin.json      Codex plugin manifest
 commands/
   init.md                      /init (diagnostic router)
   init/                        /init:project-description, user-stories,
@@ -246,6 +272,7 @@ commands/
   ai-context.md                /ai-context (context tree router)
 agents/                        specifier, clarifier, planner,
                                ai-context-{inspector,core,docs}
+skills/                        Codex adapters for the 7 public workflows
 profiles/                      stack profiles read by the init:* commands
                                (laravel, wordpress, generic)
 scripts/
@@ -253,6 +280,7 @@ scripts/
   test-ralph.sh                red/green suite for ralph with a mock engine
   check-init-drift.sh          guards against textual drift of the rules
                                duplicated across the init commands
+  check-codex-plugin.sh        validates dual manifests and Codex skills
   check-shell.sh               bash -n + shellcheck over scripts/*.sh
 docs/plans/                    internal hardening plans for the harness
 ```
@@ -263,6 +291,7 @@ docs/plans/                    internal hardening plans for the harness
 scripts/test-ralph.sh        # ralph.sh suite — fake `claude`/`codex` binaries
                              # on PATH, zero network, zero tokens; exit 0 = green
 scripts/test-ralph.sh <case> # run a single case
+scripts/check-codex-plugin.sh # dual-manifest and Codex skill checks
 scripts/check-shell.sh       # bash -n over all scripts + shellcheck when available
 scripts/check-init-drift.sh  # verbatim anchors for the shared init:* rules
 ```

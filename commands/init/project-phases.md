@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 
 # init:project-phases
 
-**ultrathink.** This is a high-stakes planning task: the document you produce is fed to AI agents that build the whole project from it. Engage your maximum reasoning budget. Do not rush. Precision, completeness, and faithful coverage of every source document matter more than brevity.
+This is a high-stakes planning task: the document you produce is fed to AI agents that build the whole project from it. Use the highest reasoning effort available. Do not rush. Precision, completeness, and faithful coverage of every source document matter more than brevity.
 
 You are helping a developer turn the project spec into a **complete, phased implementation plan**. This document is the fourth artifact of the project spec. It builds on the first three (and any design specs) and becomes the ordered backlog AI agents implement, phase by phase, referenced by number.
 
@@ -32,7 +32,7 @@ Read the existing spec and produce a single document at **`.spec/init/project-ph
 
 Before asking anything, read the inputs in this order:
 
-- **`.spec/init/project-description.md`** — scope, tech stack, core workflows. Note its **Stack Profile** table (`profile`, `data_layer`): it selects the conventions for codebase inspection (step 2) and the foundation rules below. Load the profile's details with `cat "${CLAUDE_PLUGIN_ROOT}/profiles/<profile>.md"` (missing file or unset variable → the inline per-profile defaults below; no Stack Profile block at all → `generic`).
+- **`.spec/init/project-description.md`** — scope, tech stack, core workflows. Note its **Stack Profile** table (`profile`, `data_layer`): it selects the conventions for codebase inspection (step 2) and the foundation rules below. Load `profiles/<profile>.md` from the installed plugin root (Claude: `${CLAUDE_PLUGIN_ROOT}`; Codex: the root resolved by the active skill). Missing profile or unavailable plugin root → the inline per-profile defaults below; no Stack Profile block at all → `generic`.
 - **`.spec/init/user-stories.md`** — the stories, acceptance criteria, priorities.
 - **`.spec/init/database-schema.md`** — every table, lookup, pivot, relationship.
 - **`.spec/init/design/`** — if this directory exists, it holds the **UI/design specs** (mockups, screen definitions, component references, images). Read it. Every task that builds a screen or component **must** point at its design reference, and its implementation must be **faithful to the proposed design**. `.spec/init/design/` is always a **manual artifact**: the developer creates and populates it; no `init:*` command writes there. Its absence is never an error.

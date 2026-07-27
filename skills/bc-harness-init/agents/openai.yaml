@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Init"
+  short_description: "Inspect and advance the project init chain."
+  default_prompt: "Use $bc-harness-init to inspect and advance the project init chain."

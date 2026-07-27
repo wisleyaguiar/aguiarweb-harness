@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness Feature Plan"
+  short_description: "Create a formal feature spec and phased plan."
+  default_prompt: "Use $bc-harness-plan to plan this feature without implementing it."

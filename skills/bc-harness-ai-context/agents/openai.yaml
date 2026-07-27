@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness AI Context"
+  short_description: "Generate the canonical agent context tree."
+  default_prompt: "Use $bc-harness-ai-context to refresh the repository context documentation."

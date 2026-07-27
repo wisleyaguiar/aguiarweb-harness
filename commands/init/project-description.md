@@ -42,7 +42,7 @@ Read enough to name the stack with real versions. If the directory is empty or p
 
 From what you detected, derive the **Stack Profile** (written in step 3 and consumed by every downstream command and by `scripts/ralph.sh`):
 
-- `profile` — the stack's profile slug. Pick the matching file in the plugin's `profiles/` directory (`ls "${CLAUDE_PLUGIN_ROOT}/profiles/"` — e.g. `laravel`, `wordpress`); anything without a dedicated file is `generic`.
+- `profile` — the stack's profile slug. Pick the matching file in the installed plugin's `profiles/` directory (Claude: `${CLAUDE_PLUGIN_ROOT}/profiles/`; Codex: the plugin root resolved by the active skill — e.g. `laravel`, `wordpress`); anything without a dedicated file is `generic`.
 - `data_layer` — how the project persists data: `migrations-orm` (migrations + ORM models), `cpt-taxonomy` (WordPress-style content types), `schema-file` (e.g. `schema.prisma`), or `none`.
 - `test_cmd` / `run_cmd` — the exact commands to run the test suite and the dev environment from the repo root, non-interactively. `—` when the project has none.
 

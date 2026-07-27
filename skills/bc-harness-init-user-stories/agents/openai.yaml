@@ -1,0 +1,4 @@
+interface:
+  display_name: "Harness User Stories"
+  short_description: "Derive testable stories from project scope."
+  default_prompt: "Use $bc-harness-init-user-stories to generate the project user stories."
