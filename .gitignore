@@ -16,3 +16,5 @@ mira-templates/
 .mira/
 CLAUDE.md
 mira.config.json
+
+.serena/
