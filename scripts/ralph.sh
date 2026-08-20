@@ -603,9 +603,73 @@ apply_from_override() {
 # O estado e publicado sempre, com ou sem --dashboard: e o que permite abrir o
 # ralph-watch.sh em outro terminal no meio de um run que ja comecou.
 
-declare -A META PH_FILE PH_TITLE PH_STATUS PH_ATTEMPT PH_GATES
-declare -A TK_TITLE TK_STATUS TK_COUNT
+META_KEYS=()
+META_VALUES=()
+PH_FILE=()
+PH_TITLE=()
+PH_STATUS=()
+PH_ATTEMPT=()
+PH_GATES=()
+TK_KEYS=()
+TK_TITLES=()
+TK_STATUSES=()
+TK_COUNT=()
 PHASE_NUMS=()
+
+# macOS ainda traz Bash 3.2, que nao tem arrays associativos. O volume de
+# metadados e tasks por run e pequeno; listas paralelas preservam o contrato
+# sem exigir um Bash instalado via Homebrew.
+meta_slot() {
+  local key="$1" i
+  for ((i = 0; i < ${#META_KEYS[@]}; i++)); do
+    [ "${META_KEYS[$i]}" = "$key" ] && { printf '%s' "$i"; return 0; }
+  done
+  return 1
+}
+
+meta_set() {
+  local key="$1" value="$2" slot
+  slot=$(meta_slot "$key") || { META_KEYS+=("$key"); META_VALUES+=("$value"); return 0; }
+  META_VALUES[$slot]="$value"
+}
+
+meta_get() {
+  local slot
+  slot=$(meta_slot "$1") || return 1
+  printf '%s' "${META_VALUES[$slot]}"
+}
+
+task_slot() {
+  local key="$1:$2" i
+  for ((i = 0; i < ${#TK_KEYS[@]}; i++)); do
+    [ "${TK_KEYS[$i]}" = "$key" ] && { printf '%s' "$i"; return 0; }
+  done
+  return 1
+}
+
+task_add() {
+  TK_KEYS+=("$1:$2")
+  TK_TITLES+=("$3")
+  TK_STATUSES+=("$4")
+}
+
+task_status_get() {
+  local slot
+  slot=$(task_slot "$1" "$2") || return 1
+  printf '%s' "${TK_STATUSES[$slot]}"
+}
+
+task_status_set() {
+  local slot
+  slot=$(task_slot "$1" "$2") || return 1
+  TK_STATUSES[$slot]="$3"
+}
+
+task_title_get() {
+  local slot
+  slot=$(task_slot "$1" "$2") || return 1
+  printf '%s' "${TK_TITLES[$slot]}"
+}
 
 # Titulos das tasks de uma fase, uma por linha, sem o ruido de markdown.
 phase_task_titles() {
@@ -657,43 +721,47 @@ phase_task_files() {
 state_flush() {
   local tmp="$RUN_STATE.$$"
   {
-    local k num i
-    for k in "${!META[@]}"; do printf 'META\t%s\t%s\n' "$k" "${META[$k]}"; done
+    local num i
+    for ((i = 0; i < ${#META_KEYS[@]}; i++)); do
+      printf 'META\t%s\t%s\n' "${META_KEYS[$i]}" "${META_VALUES[$i]}"
+    done
     for num in "${PHASE_NUMS[@]}"; do
       printf 'PHASE\t%s\t%s\t%s\t%s\t%s\n' \
         "$num" "${PH_STATUS[$num]}" "${PH_ATTEMPT[$num]}" "${PH_GATES[$num]}" "${PH_TITLE[$num]}"
       for ((i = 1; i <= ${TK_COUNT[$num]:-0}; i++)); do
-        printf 'TASK\t%s\t%s\t%s\t%s\n' "$num" "$i" "${TK_STATUS[$num:$i]}" "${TK_TITLE[$num:$i]}"
+        printf 'TASK\t%s\t%s\t%s\t%s\n' "$num" "$i" \
+          "$(task_status_get "$num" "$i")" "$(task_title_get "$num" "$i")"
       done
     done
   } > "$tmp" 2>/dev/null && mv -f "$tmp" "$RUN_STATE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
   return 0
 }
 
-state_meta() { META[$1]="$2"; state_flush; }
+state_meta() { meta_set "$1" "$2"; state_flush; }
 
 state_init() {
   mkdir -p "$STATE_DIR"
   : > "$LIVE_STATE"
 
-  META=(
-    [project]="$(basename "$(pwd)")"
-    [engine]="$ENGINE"
-    [input]="$INPUT_FILE"
-    [status]="running"
-    [started]="$(date +%s)"
-    [ended]=""
-    [pid]="$$"
-    [run]="run-$(date '+%m%d-%H%M%S')"
-    [cycle_max]="$MAX_CYCLES"
-    [test_cmd]="${TEST_CMD:-—}"
-    [phase_cur]=""
-    [cycle]=""
-    [gate]=""
-    [activity]=""
-    [last_error]=""
-    [note]=""
-  )
+  META_KEYS=(); META_VALUES=()
+  PH_FILE=(); PH_TITLE=(); PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=()
+  TK_KEYS=(); TK_TITLES=(); TK_STATUSES=(); TK_COUNT=(); PHASE_NUMS=()
+  meta_set project "$(basename "$(pwd)")"
+  meta_set engine "$ENGINE"
+  meta_set input "$INPUT_FILE"
+  meta_set status running
+  meta_set started "$(date +%s)"
+  meta_set ended ""
+  meta_set pid "$$"
+  meta_set run "run-$(date '+%m%d-%H%M%S')"
+  meta_set cycle_max "$MAX_CYCLES"
+  meta_set test_cmd "${TEST_CMD:-—}"
+  meta_set phase_cur ""
+  meta_set cycle ""
+  meta_set gate ""
+  meta_set activity ""
+  meta_set last_error ""
+  meta_set note ""
 
   local file num title i t
   while IFS='|' read -r file num title; do
@@ -714,15 +782,14 @@ state_init() {
     i=0
     while IFS= read -r t; do
       i=$((i + 1))
-      TK_TITLE[$num:$i]="$t"
       # Fase ja concluida em run anterior: as tasks dela estao feitas.
-      if [ "${PH_STATUS[$num]}" = "done" ]; then TK_STATUS[$num:$i]="done"
-      else TK_STATUS[$num:$i]="pending"; fi
+      if [ "${PH_STATUS[$num]}" = "done" ]; then task_add "$num" "$i" "$t" done
+      else task_add "$num" "$i" "$t" pending; fi
     done < <(phase_task_titles "$file")
     TK_COUNT[$num]="$i"
   done < <(manifest_entries)
 
-  META[phase_total]="${#PHASE_NUMS[@]}"
+  meta_set phase_total "${#PHASE_NUMS[@]}"
   state_flush
 }
 
@@ -733,7 +800,7 @@ state_gate() {
   read -r -a g <<< "${PH_GATES[$num]}"
   g[$idx]="$val"
   PH_GATES[$num]="${g[*]}"
-  META[gate]="G$idx"
+  meta_set gate "G$idx"
   state_flush
 }
 
@@ -742,14 +809,14 @@ state_phase_begin() {
   PH_STATUS[$num]="running"
   PH_ATTEMPT[$num]="$cycle"
   PH_GATES[$num]="pending pending pending pending"
-  META[phase_cur]="$num"
-  META[cycle]="$cycle"
-  META[gate]=""
-  META[activity]="iniciando a sessao do engine"
+  meta_set phase_cur "$num"
+  meta_set cycle "$cycle"
+  meta_set gate ""
+  meta_set activity "iniciando a sessao do engine"
   local i
   for ((i = 1; i <= ${TK_COUNT[$num]:-0}; i++)); do
     # No ciclo de correcao as tasks ja confirmadas pelo verificador permanecem.
-    [ "${TK_STATUS[$num:$i]}" = "done" ] || TK_STATUS[$num:$i]="pending"
+    [ "$(task_status_get "$num" "$i")" = "done" ] || task_status_set "$num" "$i" pending
   done
   : > "$LIVE_STATE"
   state_flush
@@ -758,10 +825,10 @@ state_phase_begin() {
 state_phase_end() {
   local num="$1" status="$2"
   PH_STATUS[$num]="$status"
-  META[activity]=""
+  meta_set activity ""
   if [ "$status" = "done" ]; then
     local i
-    for ((i = 1; i <= ${TK_COUNT[$num]:-0}; i++)); do TK_STATUS[$num:$i]="done"; done
+    for ((i = 1; i <= ${TK_COUNT[$num]:-0}; i++)); do task_status_set "$num" "$i" done; done
   fi
   state_flush
 }
@@ -773,9 +840,9 @@ state_absorb_live() {
   [ -f "$LIVE_STATE" ] || return 0
   while IFS=$'\t' read -r kind a b; do
     [ "$kind" = "LIVE" ] || continue
-    [ -n "${TK_STATUS[$num:$a]+x}" ] || continue
-    [ "${TK_STATUS[$num:$a]}" = "done" ] && continue
-    TK_STATUS[$num:$a]="$b"
+    task_status_get "$num" "$a" > /dev/null || continue
+    [ "$(task_status_get "$num" "$a")" = "done" ] && continue
+    task_status_set "$num" "$a" "$b"
   done < "$LIVE_STATE"
   state_flush
 }
@@ -788,10 +855,10 @@ state_tasks_from_verify() {
   while IFS= read -r line; do
     n=$(sed -E 's/^TASK ([0-9]+):.*/\1/' <<< "$line")
     verdict=$(sed -E 's/^TASK [0-9]+: ([A-Z]+).*/\1/' <<< "$line")
-    [ -n "${TK_STATUS[$num:$n]+x}" ] || continue
+    task_status_get "$num" "$n" > /dev/null || continue
     case "$verdict" in
-      DONE)       TK_STATUS[$num:$n]="done" ;;
-      INCOMPLETE) TK_STATUS[$num:$n]="incomplete" ;;
+      DONE)       task_status_set "$num" "$n" done ;;
+      INCOMPLETE) task_status_set "$num" "$n" incomplete ;;
     esac
   done < <(sed 's/^[[:space:]]*//' "$verify_log" | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE)' || true)
   state_flush
@@ -845,7 +912,7 @@ agent_status_to_ralph() {
 # com tudo "pendente" durante uma fase inteira que esta claramente andando.
 stream_watch() {
   local live="$1" phase_num="$2" quiet="$3" phase_file="${4:-}"
-  local -A st=() idx_of=()
+  local -a st=() task_ids=() task_indices=()
   local -a pending_create=() task_titles=()
   local -a decl_task=() decl_lvl=() decl_path=()
   local next=0 activity="" line tool val tid status idx
@@ -897,6 +964,16 @@ stream_watch() {
         printf '%s' $((i + 1))
         return 0
       fi
+    done
+    return 1
+  }
+
+  # Task IDs do stream sao strings arbitrarias; Bash 3.2 so tem arrays por
+  # indice. Duas listas paralelas bastam para a pequena lista de tasks da fase.
+  sw_task_index_for_id() {
+    local id="$1" i
+    for ((i = 0; i < ${#task_ids[@]}; i++)); do
+      [ "${task_ids[$i]}" = "$id" ] && { printf '%s' "${task_indices[$i]}"; return 0; }
     done
     return 1
   }
@@ -1001,7 +1078,8 @@ stream_watch() {
       *'"task":{"id":"'*)
         val="${line#*'"task":{"id":"'}"; val="${val%%\"*}"
         next=$((next + 1))
-        idx_of["$val"]="$next"
+        task_ids+=("$val")
+        task_indices+=("$next")
         st["$next"]="pending"
         [ ${#pending_create[@]} -gt 0 ] && pending_create=("${pending_create[@]:1}")
         sw_flush
@@ -1009,7 +1087,7 @@ stream_watch() {
       *'"name":"TaskUpdate"'*)
         tid=$(json_str "$line" taskId) || tid=""
         status=$(json_str "$line" status) || status=""
-        idx="${idx_of[$tid]:-$tid}"
+        idx=$(sw_task_index_for_id "$tid") || idx="$tid"
         if [[ "$idx" =~ ^[0-9]+$ ]] && [ -n "$status" ]; then
           st["$idx"]=$(agent_status_to_ralph "$status")
           case "$status" in
@@ -1335,7 +1413,7 @@ wait_for_reset() {
 
   warn "Espera $LIMIT_WAITS/$MAX_LIMIT_WAITS — aguardando $(format_duration "$wait_secs") ate retomar a MESMA fase..."
 
-  META[status]="waiting"
+  meta_set status waiting
   local remaining=$wait_secs chunk
   while [ "$remaining" -gt 0 ]; do
     chunk=60
@@ -1345,7 +1423,7 @@ wait_for_reset() {
     remaining=$((remaining - chunk))
     [ "$remaining" -gt 0 ] && log "Retomando em $(format_duration "$remaining")..."
   done
-  META[status]="running"
+  meta_set status running
   state_meta activity "retomando a fase"
 
   success "Reset provavelmente concluido. Retomando execucao."
@@ -1800,9 +1878,9 @@ stop_dashboard() {
 # sem cursor.
 on_exit() {
   local code=$?
-  if [ -n "${META[status]:-}" ] && [ "${META[status]}" = "running" ]; then
-    META[status]="failed"
-    META[ended]="$(date +%s)"
+  if [ "$(meta_get status 2>/dev/null || true)" = "running" ]; then
+    meta_set status failed
+    meta_set ended "$(date +%s)"
     state_flush
   fi
   stop_dashboard
@@ -1896,10 +1974,10 @@ main() {
   end_time=$(date +%s)
   total_duration=$((end_time - start_time))
 
-  META[ended]="$end_time"
-  META[activity]=""
-  META[gate]=""
-  if [ ${#failed_phases[@]} -eq 0 ]; then META[status]="finished"; else META[status]="failed"; fi
+  meta_set ended "$end_time"
+  meta_set activity ""
+  meta_set gate ""
+  if [ ${#failed_phases[@]} -eq 0 ]; then meta_set status finished; else meta_set status failed; fi
   # O live.tsv e da sessao, nao do run: mante-lo faria o painel exibir para
   # sempre a ultima acao de uma sessao que ja terminou.
   : > "$LIVE_STATE"

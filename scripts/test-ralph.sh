@@ -413,6 +413,14 @@ case_enabled() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 
 header() { CURRENT="$1"; echo -e "\n${YELLOW}== $1${NC}"; }
 
+# O /bin/bash do macOS e 3.2: arrays associativos fariam o ralph abortar antes
+# de iniciar Codex ou Claude. Esta guarda tambem protege os CI Linux mais novos.
+if case_enabled bash32-compat; then
+  header "0. ralph permanece compativel com Bash 3.2"
+  assert_not_contains "$RALPH" "declare -A" "sem arrays associativos globais"
+  assert_not_contains "$RALPH" "local -A" "sem arrays associativos locais"
+fi
+
 # ---------------------------------------------------------------------------
 # 1. Fase ok de primeira -> 1 commit por fase, progresso gravado
 # ---------------------------------------------------------------------------
