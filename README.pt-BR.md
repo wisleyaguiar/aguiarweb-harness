@@ -1,8 +1,8 @@
 # Beer and Code Harness (`bc-harness`)
 
-Plugin para [Claude Code](https://claude.com/claude-code) e [OpenAI Codex](https://developers.openai.com/codex/) com comandos, skills, agentes e scripts para levar um projeto da ideia à implementação de forma estruturada: especificação formal, planejamento em fases e execução autônoma com validação mecânica — sem abrir mão do controle humano nos pontos de decisão.
+Plugin para [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://developers.openai.com/codex/) e [Google Antigravity](https://antigravity.google/) com comandos, skills, agentes e scripts para levar um projeto da ideia à implementação de forma estruturada: especificação formal, planejamento em fases e execução autônoma com validação mecânica — sem abrir mão do controle humano nos pontos de decisão.
 
-O harness é **agnóstico de stack**: quem define linguagem, framework, comandos e convenções são os documentos do próprio projeto (`AGENTS.md`, `CLAUDE.md`, cadeia `.spec/`), nunca o harness.
+O harness é **agnóstico de stack**: quem define linguagem, framework, comandos e convenções são os documentos do próprio projeto (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, cadeia `.spec/`), nunca o harness.
 
 ## Visão geral do fluxo
 
@@ -32,7 +32,7 @@ Três pipelines independentes que se encaixam:
 2. **`/plan`** — de uma descrição de feature a SPEC formal + plano faseado, pronto para execução.
 3. **`ralph.sh`** — executa qualquer documento de fases de forma autônoma, uma sessão nova de agente por fase, com gates mecânicos e um commit por fase concluída.
 
-Transversal a tudo: **`/ai-context`** mantém a árvore de contexto (`AGENTS.md`, `CLAUDE.md`, `docs/agents/*.md`) sincronizada com o código real.
+Transversal a tudo: **`/ai-context`** mantém a árvore de contexto (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/agents/*.md`) sincronizada com o código real.
 
 ## Instalação
 
@@ -57,6 +57,17 @@ codex plugin add bc-harness@beer-and-code
 
 Abra uma nova conversa no Codex após a instalação. Use `/hooks` uma vez para revisar e confiar no hook `sail-guard` incluído.
 
+### Antigravity
+
+Instale a partir de um clone local (CLI) ou coloque a pasta em `.agents/plugins/` (workspace) ou `~/.gemini/config/plugins/` (global):
+
+```bash
+git clone https://github.com/beerandcodeteam/beer-and-code-harness.git
+agy plugin install ./beer-and-code-harness
+```
+
+O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravity; as mesmas `skills/` são carregadas, e o `sail-guard` roda em `run_command`. As skills têm os mesmos nomes da coluna Codex abaixo (sem `$`).
+
 | Fluxo | Claude Code | Codex |
 |---|---|---|
 | Roteador init | `/bc-harness:init` | `$bc-harness-init` |
@@ -67,7 +78,7 @@ Abra uma nova conversa no Codex após a instalação. Use `/hooks` uma vez para 
 | Planejamento de feature | `/bc-harness:plan` | `$bc-harness-plan` |
 | Contexto dos agentes | `/bc-harness:ai-context` | `$bc-harness-ai-context` |
 
-As seções de comandos abaixo usam a sintaxe curta do Claude; os dois hosts executam os mesmos arquivos canônicos de workflow.
+As seções de comandos abaixo usam a sintaxe curta do Claude; todos os hosts executam os mesmos arquivos canônicos de workflow.
 
 O `ralph.sh` é um script bash independente — copie ou referencie `scripts/ralph.sh` e rode direto no repositório do projeto-alvo.
 
@@ -134,12 +145,13 @@ Características:
 /ai-context [path] [+id] [-id] [--adopt]
 ```
 
-Gera ou atualiza 10 artefatos a partir do **código implementado** (nunca lê `.spec/`):
+Gera ou atualiza 11 artefatos a partir do **código implementado** (nunca lê `.spec/`):
 
 | Artefato | Conteúdo |
 |---|---|
 | `AGENTS.md` | 6 seções: comandos, convenções, regras comportamentais, setup, referências, índice de docs |
 | `CLAUDE.md` | Redirect ≤ 400 bytes para AGENTS.md |
+| `GEMINI.md` | Redirect ≤ 400 bytes com `@AGENTS.md` (import do Gemini CLI; o Antigravity lê `AGENTS.md` nativamente) |
 | `docs/agents/project_overview.md` | Propósito, consumidores, fluxo macro |
 | `docs/agents/architecture.md` | Estilo, layout, responsabilidades por camada |
 | `docs/agents/tech_stack.md` | Linguagem, framework, runtime, tooling de teste |
@@ -321,7 +333,7 @@ Os comandos são **roteadores finos** — todo conhecimento de template vive nos
 | `clarifier` | `/plan` §6 | QA adversarial de requisitos: analisa ambiguidades, resolve com as respostas do dev |
 | `planner` | `/plan` §7 | SPEC → PLAN.md + PHASES.md + contratos; read-only sobre o código |
 | `ai-context-inspector` | `/ai-context` §3 | Varredura read-only do repo → digest estruturado |
-| `ai-context-core` | `/ai-context` §4 | Digest → `AGENTS.md` + `CLAUDE.md` |
+| `ai-context-core` | `/ai-context` §4 | Digest → `AGENTS.md` + `CLAUDE.md` + `GEMINI.md` |
 | `ai-context-docs` | `/ai-context` §4 | Digest → 8 arquivos `docs/agents/*.md` |
 
 Os dois writers de `/ai-context` rodam em paralelo (arquivos disjuntos, digest read-only).
@@ -331,6 +343,7 @@ Os dois writers de `/ai-context` rodam em paralelo (arquivos disjuntos, digest r
 ```
 .claude-plugin/plugin.json     manifest do plugin Claude
 .codex-plugin/plugin.json      manifest do plugin Codex
+plugin.json, hooks.json        manifest e hooks do plugin Antigravity
 commands/
   init.md                      /init (roteador diagnóstico)
   init/                        /init:project-description, user-stories,
@@ -339,7 +352,7 @@ commands/
   ai-context.md                /ai-context (roteador da árvore de contexto)
 agents/                        specifier, clarifier, planner,
                                ai-context-{inspector,core,docs}
-skills/                        adaptadores Codex dos 7 fluxos públicos
+skills/                        adaptadores Codex/Antigravity dos 7 fluxos públicos
 profiles/                      perfis de stack lidos pelos comandos init:*
                                (laravel, wordpress, generic)
 scripts/
@@ -348,7 +361,7 @@ scripts/
   test-ralph.sh                suite red/green do ralph com engine mock
   check-init-drift.sh          guarda contra drift textual das regras
                                duplicadas nos comandos init
-  check-codex-plugin.sh        valida manifests duplos e skills Codex
+  check-codex-plugin.sh        valida manifests Claude/Codex/Antigravity e skills
   check-shell.sh               bash -n + shellcheck em scripts/*.sh
 docs/plans/                    planos de hardening internos do harness
 ```

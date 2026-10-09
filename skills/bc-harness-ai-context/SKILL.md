@@ -1,6 +1,6 @@
 ---
 name: bc-harness-ai-context
-description: Generate or refresh the canonical AGENTS.md, CLAUDE.md, and docs/agents context tree from implemented repository code. Use when adopting Beer and Code Harness context documentation or when the existing agent context has drifted.
+description: Generate or refresh the canonical AGENTS.md, CLAUDE.md, GEMINI.md, and docs/agents context tree from implemented repository code. Use when adopting Beer and Code Harness context documentation or when the existing agent context has drifted.
 ---
 
 # Refresh the agent context tree
@@ -16,4 +16,4 @@ description: Generate or refresh the canonical AGENTS.md, CLAUDE.md, and docs/ag
 6. Delegate the inspector to an isolated subagent when supported. After receiving its digest, delegate both writers concurrently because their file sets are disjoint. If subagents are unavailable, execute the roles sequentially in the main thread.
 7. Keep verification and reporting in the router.
 
-Use equivalent Codex tools for Claude tool names. Preserve the command's exclusion of planning artifacts and secrets.
+Use the host's equivalent tools (Codex, Antigravity) for Claude tool names. Preserve the command's exclusion of planning artifacts and secrets.

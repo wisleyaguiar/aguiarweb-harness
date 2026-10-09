@@ -9,12 +9,16 @@
 # repetidamente por connection refused.
 #
 # Entrada: JSON do hook no stdin ({ cwd, tool_input.command, ... }).
+#          Com --antigravity: { toolCall.args.{CommandLine,Cwd}, workspacePaths }.
 # Saida:   exit 0 = deixa passar; exit 2 = bloqueia (stderr vai para o agente).
+#          Com --antigravity: bloqueio vira {"decision":"deny"} no stdout.
 # Sem parser JSON disponivel (jq/python3), falha aberto: nao bloqueia nada.
 
 set -u
 
 INPUT="$(cat)"
+AGY=0
+[ "${1:-}" = "--antigravity" ] && AGY=1
 
 # --- pre-filtro barato: roda em todo Bash call, sai cedo se nao ha suspeito
 case "$INPUT" in
@@ -23,12 +27,23 @@ case "$INPUT" in
 esac
 
 # --- extrai cwd e command do JSON (jq > python3 > falha aberto)
+if [ "$AGY" = 1 ]; then
+  JQ_CWD='.toolCall.args.Cwd // .workspacePaths[0] // empty'
+  JQ_CMD='.toolCall.args.CommandLine // empty'
+  PY_CWD='d=json.load(sys.stdin);print(d.get("toolCall",{}).get("args",{}).get("Cwd") or (d.get("workspacePaths") or [""])[0])'
+  PY_CMD='print(json.load(sys.stdin).get("toolCall",{}).get("args",{}).get("CommandLine",""))'
+else
+  JQ_CWD='.cwd // empty'
+  JQ_CMD='.tool_input.command // empty'
+  PY_CWD='print(json.load(sys.stdin).get("cwd",""))'
+  PY_CMD='print(json.load(sys.stdin).get("tool_input",{}).get("command",""))'
+fi
 if command -v jq > /dev/null 2>&1; then
-  CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty')
-  CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty')
+  CWD=$(printf '%s' "$INPUT" | jq -r "$JQ_CWD")
+  CMD=$(printf '%s' "$INPUT" | jq -r "$JQ_CMD")
 elif command -v python3 > /dev/null 2>&1; then
-  CWD=$(printf '%s' "$INPUT" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("cwd",""))')
-  CMD=$(printf '%s' "$INPUT" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))')
+  CWD=$(printf '%s' "$INPUT" | python3 -c "import json,sys;$PY_CWD")
+  CMD=$(printf '%s' "$INPUT" | python3 -c "import json,sys;$PY_CMD")
 else
   exit 0
 fi
@@ -88,11 +103,23 @@ done
 
 [ -z "$OFFENDER" ] && exit 0
 
-cat >&2 << EOF
+MSG=$(cat << EOF
 BLOQUEADO pelo sail-guard: este projeto usa Laravel Sail ($SAIL_ROOT/vendor/bin/sail existe).
 Comando "$OFFENDER" rodaria no HOST, onde PHP/banco/redis podem nao existir — e vai falhar (connection refused, php not found).
 Use o equivalente via Sail:
   $SUGGESTION
 Se os containers nao estiverem de pe, suba antes com: ./vendor/bin/sail up -d
 EOF
+)
+
+if [ "$AGY" = 1 ]; then
+  # Antigravity le a decisao do stdout; jq/python3 ja garantidos acima
+  if command -v jq > /dev/null 2>&1; then
+    jq -cn --arg r "$MSG" '{decision: "deny", reason: $r}'
+  else
+    printf '%s' "$MSG" | python3 -c 'import json,sys;print(json.dumps({"decision":"deny","reason":sys.stdin.read()}))'
+  fi
+  exit 0
+fi
+printf '%s\n' "$MSG" >&2
 exit 2

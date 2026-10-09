@@ -2,9 +2,9 @@
 
 > 🇧🇷 [Documentação em português](README.pt-BR.md)
 
-A plugin for [Claude Code](https://claude.com/claude-code) and [OpenAI Codex](https://developers.openai.com/codex/) with commands, skills, agents, and scripts that take a project from idea to implementation in a structured way: formal specification, phased planning, and autonomous execution with mechanical validation — while keeping a human in control at every decision point.
+A plugin for [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://developers.openai.com/codex/), and [Google Antigravity](https://antigravity.google/) with commands, skills, agents, and scripts that take a project from idea to implementation in a structured way: formal specification, phased planning, and autonomous execution with mechanical validation — while keeping a human in control at every decision point.
 
-The harness is **stack-agnostic**: language, framework, commands, and conventions are defined by the project's own documents (`AGENTS.md`, `CLAUDE.md`, the `.spec/` chain), never by the harness.
+The harness is **stack-agnostic**: language, framework, commands, and conventions are defined by the project's own documents (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, the `.spec/` chain), never by the harness.
 
 ## Workflow overview
 
@@ -34,7 +34,7 @@ Three independent pipelines that fit together:
 2. **`/plan`** — from a feature description to a formal SPEC + phased plan, ready for execution.
 3. **`ralph.sh`** — executes any phase document autonomously, one fresh agent session per phase, with mechanical gates and one commit per completed phase.
 
-Cross-cutting: **`/ai-context`** keeps the context tree (`AGENTS.md`, `CLAUDE.md`, `docs/agents/*.md`) in sync with the real code.
+Cross-cutting: **`/ai-context`** keeps the context tree (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/agents/*.md`) in sync with the real code.
 
 ## Installation
 
@@ -59,6 +59,17 @@ codex plugin add bc-harness@beer-and-code
 
 Start a new Codex conversation after installation. Open `/hooks` once to review and trust the bundled `sail-guard` hook.
 
+### Antigravity
+
+Install from a local clone (CLI) or drop the folder into `.agents/plugins/` (workspace) or `~/.gemini/config/plugins/` (global):
+
+```bash
+git clone https://github.com/beerandcodeteam/beer-and-code-harness.git
+agy plugin install ./beer-and-code-harness
+```
+
+The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; the same `skills/` are loaded, and `sail-guard` runs on `run_command`. Skills have the same names as the Codex column below (without `$`).
+
 | Workflow | Claude Code | Codex |
 |---|---|---|
 | Init router | `/bc-harness:init` | `$bc-harness-init` |
@@ -69,7 +80,7 @@ Start a new Codex conversation after installation. Open `/hooks` once to review 
 | Feature planning | `/bc-harness:plan` | `$bc-harness-plan` |
 | Agent context | `/bc-harness:ai-context` | `$bc-harness-ai-context` |
 
-The command sections below use the shorter Claude syntax; both hosts execute the same canonical workflow files.
+The command sections below use the shorter Claude syntax; all hosts execute the same canonical workflow files.
 
 `ralph.sh` is a standalone bash script — copy or reference `scripts/ralph.sh` and run it directly in the target project's repository.
 
@@ -136,12 +147,13 @@ Key characteristics:
 /ai-context [path] [+id] [-id] [--adopt]
 ```
 
-Generates or refreshes 10 artifacts from the **implemented code** (never reads `.spec/`):
+Generates or refreshes 11 artifacts from the **implemented code** (never reads `.spec/`):
 
 | Artifact | Content |
 |---|---|
 | `AGENTS.md` | 6 sections: commands, conventions, behavioral rules, setup, references, docs index |
 | `CLAUDE.md` | ≤ 400-byte redirect importing `@AGENTS.md` |
+| `GEMINI.md` | ≤ 400-byte redirect with `@AGENTS.md` (Gemini CLI import; Antigravity reads `AGENTS.md` natively) |
 | `docs/agents/project_overview.md` | Purpose, consumers, macro flow |
 | `docs/agents/architecture.md` | Style, layout, layer responsibilities |
 | `docs/agents/tech_stack.md` | Language, framework, runtime, test tooling |
@@ -325,7 +337,7 @@ Commands are **thin routers** — all template knowledge lives in the agents:
 | `clarifier` | `/plan` §6 | Adversarial requirements QA: finds ambiguities, resolves them with the developer's answers |
 | `planner` | `/plan` §7 | SPEC → PLAN.md + PHASES.md + contracts; read-only over the code |
 | `ai-context-inspector` | `/ai-context` §3 | Read-only repo sweep → structured digest |
-| `ai-context-core` | `/ai-context` §4 | Digest → `AGENTS.md` + `CLAUDE.md` |
+| `ai-context-core` | `/ai-context` §4 | Digest → `AGENTS.md` + `CLAUDE.md` + `GEMINI.md` |
 | `ai-context-docs` | `/ai-context` §4 | Digest → the 8 `docs/agents/*.md` files |
 
 The two `/ai-context` writers run in parallel (disjoint files, read-only digest).
@@ -335,6 +347,7 @@ The two `/ai-context` writers run in parallel (disjoint files, read-only digest)
 ```
 .claude-plugin/plugin.json     Claude plugin manifest
 .codex-plugin/plugin.json      Codex plugin manifest
+plugin.json, hooks.json        Antigravity plugin manifest and hooks
 commands/
   init.md                      /init (diagnostic router)
   init/                        /init:project-description, user-stories,
@@ -343,7 +356,7 @@ commands/
   ai-context.md                /ai-context (context tree router)
 agents/                        specifier, clarifier, planner,
                                ai-context-{inspector,core,docs}
-skills/                        Codex adapters for the 7 public workflows
+skills/                        Codex/Antigravity adapters for the 7 public workflows
 profiles/                      stack profiles read by the init:* commands
                                (laravel, wordpress, generic)
 scripts/
@@ -352,7 +365,7 @@ scripts/
   test-ralph.sh                red/green suite for ralph with a mock engine
   check-init-drift.sh          guards against textual drift of the rules
                                duplicated across the init commands
-  check-codex-plugin.sh        validates dual manifests and Codex skills
+  check-codex-plugin.sh        validates Claude/Codex/Antigravity manifests and skills
   check-shell.sh               bash -n + shellcheck over scripts/*.sh
 docs/plans/                    internal hardening plans for the harness
 ```

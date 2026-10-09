@@ -77,5 +77,30 @@ assert "PLUGIN_ROOT" in command and "CLAUDE_PLUGIN_ROOT" in command, (
     "hook must support Codex and Claude plugin roots"
 )
 
-print("Codex plugin structure OK")
+antigravity = load_json("plugin.json")
+assert set(antigravity) <= {"$schema", "name", "description"}, (
+    "Antigravity manifest allows only $schema, name, description"
+)
+assert antigravity.get("name") == claude["name"], "manifest drift: Antigravity name"
+agy_hooks = load_json("hooks.json")
+agy_command = agy_hooks["sail-guard"]["PreToolUse"][0]["hooks"][0]["command"]
+assert agy_command == "./scripts/sail-guard.sh --antigravity", (
+    "Antigravity hook must run sail-guard relative to the plugin root"
+)
+
+print("Codex and Antigravity plugin structure OK")
 PY
+
+# sail-guard --antigravity: deny vira JSON no stdout; passagem = stdout vazio
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$TMP/vendor/bin" && touch "$TMP/vendor/bin/sail"
+agy_guard() {
+  printf '{"toolCall":{"name":"run_command","args":{"CommandLine":"%s","Cwd":"%s"}}}' "$1" "$TMP" |
+    "$ROOT/scripts/sail-guard.sh" --antigravity
+}
+agy_guard "php artisan migrate" | grep -q '"decision": *"deny"' ||
+  { echo "sail-guard --antigravity did not deny host artisan" >&2; exit 1; }
+[ -z "$(agy_guard "echo hi")" ] ||
+  { echo "sail-guard --antigravity must stay silent on pass" >&2; exit 1; }
+echo "sail-guard Antigravity mode OK"

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "bc-harness",
+  "description": "Beer and Code harness — structured project discovery, specification, planning, context, and validated autonomous execution."
+}
