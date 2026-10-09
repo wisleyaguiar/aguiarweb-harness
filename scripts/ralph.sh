@@ -22,7 +22,8 @@
 #   ./ralph.sh [opcoes] [caminho-do-arquivo]
 #
 # Opcoes:
-#   --engine codex|claude    engine de implementacao (default: codex)
+#   --engine codex|claude|agy  engine de implementacao (default: codex;
+#                            agy = Antigravity CLI)
 #   --from N                 comeca na fase N (limpa do progresso as fases >= N)
 #   --keep-going             continua apos uma fase falhar (default: para)
 #   --max-cycles N           ciclos de correcao por fase (default: 3)
@@ -39,7 +40,7 @@
 #   No engine claude a sessao roda com --output-format stream-json, o que da
 #   progresso POR TASK em tempo real: o prompt manda o agente registrar uma
 #   tarefa por item `- [ ]` da fase, e o ralph le essas transicoes do stream.
-#   No engine codex nao ha stream equivalente: a granularidade e por fase.
+#   Nos engines codex e agy nao ha stream equivalente: a granularidade e por fase.
 #
 # Input (primeiro arquivo posicional). Sem argumento, resolve nesta ordem:
 #   1. .spec/init/project-phases.md      (cadeia init)
@@ -55,7 +56,8 @@
 #   - qualquer outro `## ` encerra a captura da fase anterior
 #
 # Gates por fase (todos verdes -> commit; qualquer vermelho -> ciclo de correcao):
-#   0. engine terminou de verdade (claude: is_error no JSON; codex: exit code)
+#   0. engine terminou de verdade (claude: is_error no JSON; agy: status no
+#      JSON; codex: exit code)
 #   1. a sessao escreveu codigo? SINAL, nao veredito — uma fase ja implementada
 #      faz o engine (corretamente) nao escrever nada. Alimenta a causa do ciclo
 #      de correcao quando um gate posterior reprova.
@@ -66,7 +68,8 @@
 #      nao escreveu nada (claim "ja implementada"), ciclo de correcao, ou
 #      gate 2 desabilitado. --no-verify / RALPH_VERIFY=off desliga. No engine
 #      claude o verificador usa um modelo barato (RALPH_VERIFY_MODEL, default:
-#      sonnet) — e leitura + checklist.
+#      sonnet) — e leitura + checklist. No engine agy o verificador roda numa
+#      worktree descartavel (o agy nao tem modo read-only por invocacao).
 #
 # Gates verdes com a arvore limpa => a fase ja estava implementada em HEAD:
 # marcada como feita, sem commit (nao ha o que commitar).
@@ -100,7 +103,7 @@
 #   RALPH_LIMIT_BUFFER       segundos extras apos o reset (default: 60)
 #
 # Exportadas para hooks (ex: notify-n8n.sh) durante cada sessao de engine:
-#   RALPH_ENGINE             codex | claude
+#   RALPH_ENGINE             codex | claude | agy
 #   RALPH_PHASE_TITLE        titulo da fase corrente
 #   RALPH_PHASE_NUM          numero da fase corrente
 #   RALPH_PHASE_TOTAL        total de fases do run
@@ -112,6 +115,7 @@
 # Pre-requisitos:
 #   - Codex: npm install -g @openai/codex + OPENAI_API_KEY
 #   - Claude: npm install -g @anthropic-ai/claude-code + ANTHROPIC_API_KEY
+#   - Antigravity: agy instalado e logado (https://antigravity.google/docs/cli)
 #   - Raiz de um repo git, com a arvore de trabalho limpa
 
 set -euo pipefail
@@ -426,8 +430,8 @@ resolve_test_cmd() {
 }
 
 preflight_checks() {
-  if [[ "$ENGINE" != "codex" && "$ENGINE" != "claude" ]]; then
-    fail "Engine invalida: $ENGINE. Use 'codex' ou 'claude'."
+  if [[ "$ENGINE" != "codex" && "$ENGINE" != "claude" && "$ENGINE" != "agy" ]]; then
+    fail "Engine invalida: $ENGINE. Use 'codex', 'claude' ou 'agy'."
     exit 1
   fi
 
@@ -460,6 +464,8 @@ preflight_checks() {
   if ! command -v "$ENGINE" &> /dev/null; then
     if [[ "$ENGINE" == "codex" ]]; then
       fail "codex CLI nao encontrado. Instale com: npm install -g @openai/codex"
+    elif [[ "$ENGINE" == "agy" ]]; then
+      fail "Antigravity CLI (agy) nao encontrado. Veja: https://antigravity.google/docs/cli"
     else
       fail "Claude Code CLI nao encontrado. Instale com: npm install -g @anthropic-ai/claude-code"
     fi
@@ -480,6 +486,8 @@ preflight_checks() {
 
   validate_input_format
   exclude_phases_dir
+  # Backstop: worktree de verificacao agy de um run morto por SIGKILL.
+  git worktree prune 2>/dev/null || true
 
   # Arvore limpa: 'git add -A' da primeira fase engoliria trabalho nao commitado.
   if [ -n "$(git status --porcelain)" ]; then
@@ -1352,7 +1360,14 @@ detect_usage_limit() {
   # O denominador comum e api_error_status 429 no JSON de resultado — casar so
   # a frase deixa o limite passar por gate 0 e queima todos os ciclos de
   # correcao em segundos, que e exatamente o que o invariante 4 evita.
-  if [[ "$ENGINE" == "claude" ]]; then
+  if [[ "$ENGINE" == "agy" ]]; then
+    # O agy fecha com uma linha JSON de status: SUCCESS nunca e limite, mesmo
+    # que a resposta cite "429". Na verificacao (texto) vale o padrao generico.
+    grep -qF '"status":"SUCCESS"' <<< "$tail_txt" && return 1
+    # ponytail: mensagem real de quota do agy nao observada; padrao generico +
+    # RESOURCE_EXHAUSTED (gRPC). Ajustar quando aparecer um log real.
+    pattern='rate limit reached|quota exceeded|usage limit reached|too many requests|resource.?exhausted'
+  elif [[ "$ENGINE" == "claude" ]]; then
     pattern='usage limit reached|hit your (session|usage|[0-9]+-hour) limit|[0-9]+-hour limit reached|"api_error_status"[[:space:]]*:[[:space:]]*429'
   else
     pattern='rate limit reached|quota exceeded|usage limit reached|too many requests'
@@ -1452,7 +1467,16 @@ run_engine() {
   while true; do
     local rc=0
 
-    if [[ "$ENGINE" == "codex" ]]; then
+    if [[ "$ENGINE" == "agy" ]]; then
+      if [[ "$mode" == "verify" ]]; then
+        agy_verify "$prompt_file" "$log_file" ${model_args[@]+"${model_args[@]}"} || rc=$?
+      else
+        # json: uma linha final com "status" — e o que o gate 0 le.
+        # < /dev/null: mesma razao do claude -p (nao engolir o stream de quem chamou).
+        agy -p "$(cat "$prompt_file")" --dangerously-skip-permissions \
+          --output-format json < /dev/null 2>&1 | tee "$log_file" || rc=$?
+      fi
+    elif [[ "$ENGINE" == "codex" ]]; then
       if [[ "$mode" == "verify" ]]; then
         codex exec --sandbox read-only ${model_args[@]+"${model_args[@]}"} - < "$prompt_file" 2>&1 | tee "$log_file" || rc=$?
       else
@@ -1496,6 +1520,46 @@ run_engine() {
   done
 }
 
+# agy_verify <prompt_file> <log_file> [--model M]
+# O agy nao tem sandbox read-only por invocacao (--mode plan escreve; deny so
+# no settings.json global). O verificador roda numa worktree descartavel com
+# HEAD + diff + nao-rastreados: o que ele escrever morre com a copia.
+# ponytail: pastas ignoradas (vendor/, node_modules/) nao vao para a copia —
+# basta para leitura + checklist; copiar se o verificador precisar rodar algo.
+AGY_VERIFY_DIR=""
+
+agy_verify() {
+  local prompt_file="$1" log_file="$2"
+  shift 2
+  local prompt rc=0 diff
+  prompt=$(cat "$prompt_file")
+  AGY_VERIFY_DIR=$(mktemp -d)
+  # Chamado sob `|| true`: o set -e nao vale aqui. Copia incompleta faria o
+  # verificador reprovar a implementacao por engano — falha explicita no log.
+  if ! { git worktree add --detach -q "$AGY_VERIFY_DIR" HEAD &&
+         diff=$(git diff HEAD --binary) &&
+         { [ -z "$diff" ] || printf '%s\n' "$diff" | git -C "$AGY_VERIFY_DIR" apply --binary; } &&
+         git ls-files -oz --exclude-standard | tar --null -T - -cf - | tar -xf - -C "$AGY_VERIFY_DIR"; } 2>&1; then
+    echo "ralph: falha ao montar a copia de verificacao do agy (worktree/diff/nao-rastreados)" > "$log_file"
+    agy_verify_cleanup
+    return 1
+  fi
+
+  # Skip-permissions so dentro da copia: sem ele o headless nega ferramentas ao
+  # acaso e o verificador emite INCOMPLETE falso.
+  (cd "$AGY_VERIFY_DIR" && agy -p "$prompt" --dangerously-skip-permissions "$@" < /dev/null) 2>&1 \
+    | tee "$log_file" || rc=$?
+
+  agy_verify_cleanup
+  return "$rc"
+}
+
+agy_verify_cleanup() {
+  [ -n "$AGY_VERIFY_DIR" ] || return 0
+  git worktree remove --force "$AGY_VERIFY_DIR" 2>/dev/null || rm -rf "$AGY_VERIFY_DIR"
+  AGY_VERIFY_DIR=""
+}
+
 # ---------------------------------------------------------------------------
 # Gates
 # ---------------------------------------------------------------------------
@@ -1526,6 +1590,11 @@ gate0_engine_finished() {
       GATE_CAUSE="O engine reportou is_error=true no resultado. Ultimas linhas do output:"$'\n'"$(tail -n 40 "$log_file")"
       return 1
     fi
+  fi
+
+  if [[ "$ENGINE" == "agy" ]] && ! grep -F '"status"' "$log_file" | tail -n 1 | grep -qE '"status"[[:space:]]*:[[:space:]]*"SUCCESS"'; then
+    GATE_CAUSE="O engine nao terminou com status SUCCESS. Ultimas linhas do output:"$'\n'"$(tail -n 40 "$log_file")"
+    return 1
   fi
 
   if [ "$rc" -ne 0 ]; then
@@ -1884,6 +1953,7 @@ on_exit() {
     state_flush
   fi
   stop_dashboard
+  agy_verify_cleanup
   exit "$code"
 }
 

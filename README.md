@@ -88,6 +88,7 @@ The command sections below use the shorter Claude syntax; all hosts execute the 
 
 - Codex engine: `npm install -g @openai/codex` + `codex login` (ChatGPT or API key)
 - Claude engine: `npm install -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY`
+- Antigravity engine: [Antigravity CLI](https://antigravity.google/docs/cli) (`agy`) installed and signed in
 - Root of a git repository with a **clean** working tree
 
 ## Commands
@@ -189,7 +190,7 @@ Reads a phase document, splits it on the `## Phase N: <title>` heading, and feed
 
 With no argument, the input resolves in this order: `.spec/init/project-phases.md` → `.spec/project-phases.md` (pre-init layout, with a warning). A feature `PHASES.md` is also valid input.
 
-> **Autonomy and permissions note**: ralph is an unattended orchestrator by design. With the Claude engine, implementation sessions run with `--dangerously-skip-permissions` — the agent can edit files and run commands in the repository without prompting. Run it only in repositories you trust, ideally in a disposable branch or isolated environment (container/VM). Every phase lands as a separate commit, so `git revert`/`git reset` always gets you back. The verification session (gate 3) is restricted to read-only tools (`Read,Glob,Grep`).
+> **Autonomy and permissions note**: ralph is an unattended orchestrator by design. With the Claude engine, implementation sessions run with `--dangerously-skip-permissions` — the agent can edit files and run commands in the repository without prompting. Run it only in repositories you trust, ideally in a disposable branch or isolated environment (container/VM). Every phase lands as a separate commit, so `git revert`/`git reset` always gets you back. The verification session (gate 3) is restricted to read-only tools (`Read,Glob,Grep`). The agy engine also runs with `--dangerously-skip-permissions`; since agy has no per-call read-only mode, its verifier runs in a disposable git worktree (HEAD + diff + untracked files, without ignored folders such as `vendor/`) and anything it writes is discarded.
 
 ### Invariants
 
@@ -203,7 +204,7 @@ With no argument, the input resolves in this order: `.spec/init/project-phases.m
 
 | Gate | Question | How it decides |
 |---|---|---|
-| 0 | Did the engine actually finish? | claude: `is_error` in the result JSON; codex: exit code |
+| 0 | Did the engine actually finish? | claude: `is_error` in the result JSON; agy: `status` in the JSON output; codex: exit code |
 | 1 | Did the session write code? | Tree signature before/after. **A signal, not a verdict** — an already-implemented phase makes the engine (correctly) write nothing; the signal feeds the fix-cycle cause |
 | 2 | Does the test suite pass? | Run **by ralph itself**, outside the agent session — the agent cannot "fake green" |
 | 3 | Is each task actually in the code? | Independent read-only verifier session that emits `TASK <n>: DONE/INCOMPLETE` per task. Runs on every phase by default (`RALPH_VERIFY=always`); on the claude engine it uses a cheap model (`sonnet`) |
@@ -222,7 +223,7 @@ Laravel Sail projects: the suite runs **inside the container** (`vendor/bin/sail
 
 | Option | Effect |
 |---|---|
-| `--engine codex\|claude` | Implementation engine (default: `codex`) |
+| `--engine codex\|claude\|agy` | Implementation engine (default: `codex`; `agy` = Antigravity CLI) |
 | `--from N` | Starts at phase N (clears progress for phases ≥ N) |
 | `--keep-going` | Continues after a phase fails (creates a `wip(phase-N)` commit; default: stop) |
 | `--max-cycles N` | Fix cycles per phase (default: 3) |
@@ -284,7 +285,7 @@ At the end of the phase, **gate 3 has the last word**: the verifier's `TASK <n>:
 
 So: during the phase the panel shows the agent's intent; at the end of the phase it shows the verified truth.
 
-On the **codex** engine there is no equivalent stream — granularity stays per phase, and tasks show as pending until gate 3's verdict.
+On the **codex** and **agy** engines there is no equivalent stream — granularity stays per phase, and tasks show as pending until gate 3's verdict.
 
 ### Large plans: pinned top, scrolling table
 

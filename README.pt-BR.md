@@ -86,6 +86,7 @@ O `ralph.sh` é um script bash independente — copie ou referencie `scripts/ral
 
 - Engine Codex: `npm install -g @openai/codex` + `codex login` (ChatGPT ou API key)
 - Engine Claude: `npm install -g @anthropic-ai/claude-code` + `ANTHROPIC_API_KEY`
+- Engine Antigravity: [Antigravity CLI](https://antigravity.google/docs/cli) (`agy`) instalado e logado
 - Raiz de um repositório git com árvore de trabalho **limpa**
 
 ## Comandos
@@ -199,7 +200,7 @@ Sem argumento, resolve o input nesta ordem: `.spec/init/project-phases.md` → `
 
 | Gate | Pergunta | Como decide |
 |---|---|---|
-| 0 | O engine terminou de verdade? | claude: `is_error` no JSON de resultado; codex: exit code |
+| 0 | O engine terminou de verdade? | claude: `is_error` no JSON de resultado; agy: `status` no JSON de saída; codex: exit code |
 | 1 | A sessão escreveu código? | Assinatura da árvore antes/depois. **Sinal, não veredito** — fase já implementada faz o engine (corretamente) não escrever nada; o sinal alimenta a causa do ciclo de correção |
 | 2 | A suite de testes passa? | Rodada **pelo ralph**, fora da sessão do agente — o agente não pode "mentir verde" |
 | 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`) |
@@ -218,7 +219,7 @@ Projeto Laravel Sail: a suite roda **dentro do container** (`vendor/bin/sail tes
 
 | Opção | Efeito |
 |---|---|
-| `--engine codex\|claude` | Engine de implementação (default: `codex`) |
+| `--engine codex\|claude\|agy` | Engine de implementação (default: `codex`; `agy` = Antigravity CLI) |
 | `--from N` | Começa na fase N (limpa o progresso das fases ≥ N) |
 | `--keep-going` | Continua após fase falhar (cria commit `wip(phase-N)`; default: para) |
 | `--max-cycles N` | Ciclos de correção por fase (default: 3) |
@@ -281,7 +282,7 @@ No fim da fase, o **gate 3 tem a palavra final**: o veredito `TASK <n>: DONE/INC
 
 Ou seja: durante a fase o painel mostra a intenção do agente; ao fim da fase mostra a verdade verificada.
 
-No engine **codex** não há stream equivalente — a granularidade fica por fase, e as tasks aparecem como pendentes até o veredito do gate 3.
+Nos engines **codex** e **agy** não há stream equivalente — a granularidade fica por fase, e as tasks aparecem como pendentes até o veredito do gate 3.
 
 ### Planos grandes: topo fixo e tabela rolante
 

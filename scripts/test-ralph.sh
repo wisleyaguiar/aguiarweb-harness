@@ -83,6 +83,19 @@ if [ "$name" = "claude" ]; then
       *) shift ;;
     esac
   done
+elif [ "$name" = "agy" ]; then
+  # agy -p: mesmo risco de stdin do claude -p.
+  [ -t 0 ] || cat > /dev/null
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p) prompt="$2"; shift 2 ;;
+      --model) model="$2"; shift 2 ;;
+      --output-format) outfmt="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  # Prova de que o verificador agy NAO roda no repo real: registra o cwd.
+  grep -q '^RALPH_VERIFY' <<< "$prompt" && pwd -P > "$state/agy_verify_cwd"
 else
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -106,6 +119,8 @@ fi
 # implementacao no repo, a fase esta incompleta.
 if [ "$verify" -eq 1 ]; then
   n=$(bump verify_calls)
+  # Verificador que desobedece o read-only: a escrita nao pode chegar ao repo.
+  [ "$scenario" = "agy-verify-writes" ] && mkdir -p src && echo leak > src/verifier-leak.txt
   tasks=$(grep -cE '^[[:space:]]*- \[[ x]\]' <<< "$prompt")
 
   implemented=0
@@ -194,6 +209,9 @@ write=1
 if [ "$write" -eq 1 ]; then
   mkdir -p src
   echo "impl $n" > "src/impl-$n.txt"
+  # agy-staged: a mudanca vai para o index — sai de ls-files -o e entra no
+  # git diff HEAD. Exercita o apply da copia de verificacao do agy.
+  [ "$scenario" = "agy-staged" ] && git add src
 fi
 
 if [ "$scenario" = "false-429" ]; then
@@ -229,6 +247,12 @@ if [ "$name" = "claude" ]; then
     fi
   fi
   emit_claude_ok
+elif [ "$name" = "agy" ]; then
+  if [ "$scenario" = "agy-status-error" ]; then
+    echo '{"conversation_id":"mock","status":"ERROR","response":"falhou"}'
+  else
+    echo '{"conversation_id":"mock","status":"SUCCESS","response":"implementado"}'
+  fi
 else
   echo "Done."
 fi
@@ -238,6 +262,7 @@ MOCK
   chmod +x "$bin/mock-engine"
   cp "$bin/mock-engine" "$bin/claude"
   cp "$bin/mock-engine" "$bin/codex"
+  cp "$bin/mock-engine" "$bin/agy"
 }
 
 make_testcmd() {
@@ -1427,6 +1452,44 @@ if case_enabled watch-frame; then
   else
     ok "tmux ausente — integracao do quadro pulada"
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# 38. Engine agy: impl em JSON (gate 0 le "status"), verificador em worktree
+#     descartavel — o que ele escreve nao chega ao repo nem ao commit
+# ---------------------------------------------------------------------------
+if case_enabled agy-ok; then
+  header "38. engine agy: verificador isolado, escrita do verificador descartada"
+  d=$(new_case agy-ok)
+  rc=$(run_ralph "$d" agy-verify-writes --engine agy --test-cmd "$d/test.sh")
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq 3 "$(commits "$d")" "1 commit por fase (2 fases)"
+  assert_eq 2 "$(cat "$d/state/verify_calls")" "gate 3 rodou em toda fase (viu os nao-rastreados na copia)"
+  [ ! -e "$d/repo/src/verifier-leak.txt" ] && ok "escrita do verificador nao vazou para o repo" \
+    || bad "escrita do verificador nao vazou para o repo"
+  assert_not_contains_cmd=$(git -C "$d/repo" log --all --name-only --pretty=format: | grep -c verifier-leak || true)
+  assert_eq 0 "$assert_not_contains_cmd" "escrita do verificador fora de todo commit"
+  [ "$(cat "$d/state/agy_verify_cwd")" != "$(cd "$d/repo" && pwd -P)" ] && ok "verificador rodou fora do repo real" \
+    || bad "verificador rodou fora do repo real"
+  assert_eq 1 "$(git -C "$d/repo" worktree list | grep -c .)" "worktree de verificacao removida"
+fi
+
+if case_enabled agy-staged; then
+  header "40. engine agy: mudanca rastreada chega a copia via git apply"
+  d=$(new_case agy-staged)
+  rc=$(run_ralph "$d" agy-staged --engine agy --test-cmd "$d/test.sh" --max-cycles 1)
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq 3 "$(commits "$d")" "1 commit por fase (verificador viu o diff rastreado)"
+  assert_not_contains "$d/out.log" "falha ao montar a copia" "copia montada sem erro"
+fi
+
+if case_enabled agy-status-error; then
+  header "39. engine agy: status != SUCCESS reprova no gate 0"
+  d=$(new_case agy-status-error)
+  rc=$(run_ralph "$d" agy-status-error --engine agy --test-cmd "$d/test.sh" --max-cycles 1)
+  assert_eq 1 "$rc" "exit 1"
+  assert_eq 1 "$(commits "$d")" "nenhum commit"
+  assert_contains "$d/out.log" "status SUCCESS" "gate 0 citou o status do agy"
 fi
 
 # ---------------------------------------------------------------------------
