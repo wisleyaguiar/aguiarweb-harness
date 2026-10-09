@@ -141,7 +141,7 @@ Generates or refreshes 10 artifacts from the **implemented code** (never reads `
 | Artifact | Content |
 |---|---|
 | `AGENTS.md` | 6 sections: commands, conventions, behavioral rules, setup, references, docs index |
-| `CLAUDE.md` | ≤ 400-byte redirect to AGENTS.md |
+| `CLAUDE.md` | ≤ 400-byte redirect importing `@AGENTS.md` |
 | `docs/agents/project_overview.md` | Purpose, consumers, macro flow |
 | `docs/agents/architecture.md` | Style, layout, layer responsibilities |
 | `docs/agents/tech_stack.md` | Language, framework, runtime, test tooling |

@@ -19,7 +19,7 @@ The tree documents reality, not intent: source code, manifests, CI config, and c
 | id | Path | Content |
 |---|---|---|
 | `AGENTS` | `AGENTS.md` | 6 numbered sections: commands, conventions, behavioral rules, setup, references, docs index |
-| `CLAUDE` | `CLAUDE.md` | ≤400-byte redirect to AGENTS.md |
+| `CLAUDE` | `CLAUDE.md` | ≤400-byte redirect importing `@AGENTS.md` |
 | `project_overview` | `docs/agents/project_overview.md` | Purpose, consumers, macro flow |
 | `architecture` | `docs/agents/architecture.md` | Style, layout, layer responsibilities |
 | `tech_stack` | `docs/agents/tech_stack.md` | Language, framework, runtime, test tooling |
