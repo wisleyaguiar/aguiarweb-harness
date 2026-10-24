@@ -2,6 +2,7 @@
 description: Planning pipeline — produces a formal SPEC.md (GEARS RIGID/FLEXIBLE), resolved clarifications, PLAN.md, and optional contracts from a developer-provided description. Writes only under .spec/features/[slug]/; never writes application code.
 argument-hint: "<description | path-to-description-file>"
 allowed-tools: Task, Agent, Read, Write, Glob, Grep, Bash, AskUserQuestion
+disable-model-invocation: true
 ---
 
 # plan

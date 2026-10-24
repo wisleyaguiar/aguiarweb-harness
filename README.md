@@ -82,6 +82,8 @@ The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; 
 
 The command sections below use the shorter Claude syntax; all hosts execute the same canonical workflow files.
 
+In Claude Code and Codex, the workflows run only when you call them by name. Claude Code applies this to `/init`, `/plan`, and `/ai-context`; Codex applies it to every skill (`$bc-harness-…`). The Antigravity docs list no per-skill switch, so its agent may still start a skill on its own. On every host, `/init` hands off to the next `init` step itself.
+
 `ralph.sh` is a standalone bash script — copy or reference `scripts/ralph.sh` and run it directly in the target project's repository.
 
 **ralph.sh prerequisites:**

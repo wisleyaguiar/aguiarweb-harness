@@ -1,6 +1,7 @@
 ---
 description: Show the status of the init spec chain (.spec/init/*) — present, absent, or stale — and run the next init:* command in the chain. Writes nothing itself; all authoring lives in the invoked init:* commands.
 allowed-tools: Read, Bash, Glob, Grep, SlashCommand
+disable-model-invocation: true
 ---
 
 # init

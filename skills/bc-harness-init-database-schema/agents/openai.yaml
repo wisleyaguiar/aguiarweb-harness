@@ -2,3 +2,5 @@ interface:
   display_name: "Harness Database Schema"
   short_description: "Derive the data or content model from specs."
   default_prompt: "Use $bc-harness-init-database-schema to generate the project data model."
+policy:
+  allow_implicit_invocation: false

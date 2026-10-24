@@ -80,6 +80,8 @@ O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravi
 
 As seções de comandos abaixo usam a sintaxe curta do Claude; todos os hosts executam os mesmos arquivos canônicos de workflow.
 
+No Claude Code e no Codex, os workflows só rodam quando você os chama pelo nome. O Claude Code aplica isso a `/init`, `/plan` e `/ai-context`; o Codex, a todas as skills (`$bc-harness-…`). A doc do Antigravity não lista uma chave por skill para isso, então o agente dele ainda pode iniciar uma skill sozinho. Em todos os hosts, o `/init` passa sozinho para a próxima etapa do `init`.
+
 O `ralph.sh` é um script bash independente — copie ou referencie `scripts/ralph.sh` e rode direto no repositório do projeto-alvo.
 
 **Pré-requisitos do ralph.sh:**

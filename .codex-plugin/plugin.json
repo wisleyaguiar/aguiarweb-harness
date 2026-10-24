@@ -28,9 +28,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Initialize this project with Beer and Code Harness.",
-      "Create a formal specification and phased plan for this feature.",
-      "Refresh this repository's agent context documentation."
+      "Use $bc-harness-init to initialize this project.",
+      "Use $bc-harness-plan to create a formal specification and phased plan for this feature.",
+      "Use $bc-harness-ai-context to refresh this repository's agent context documentation."
     ]
   }
 }
