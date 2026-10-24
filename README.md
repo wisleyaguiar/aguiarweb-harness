@@ -68,7 +68,7 @@ git clone https://github.com/beerandcodeteam/beer-and-code-harness.git
 agy plugin install ./beer-and-code-harness
 ```
 
-The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; the same `skills/` and `agents/` are loaded, and `sail-guard` runs on `run_command`. Skills have the same names as the Codex column below (without `$`).
+The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; the same `skills/` and `agents/` are loaded, and `sail-guard` runs on `run_command`. Skills have the same names as the Codex column below, with the plugin prefix: `/bc-harness:bc-harness-plan`.
 
 | Workflow | Claude Code | Codex |
 |---|---|---|
@@ -82,7 +82,7 @@ The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; 
 
 The command sections below use the shorter Claude syntax; all hosts execute the same canonical workflow files.
 
-In Claude Code and Codex, the workflows run only when you call them by name. Claude Code applies this to `/init`, `/plan`, and `/ai-context`; Codex applies it to every skill (`$bc-harness-…`). The Antigravity docs list no per-skill switch, so its agent may still start a skill on its own. On every host, `/init` hands off to the next `init` step itself.
+The workflows run only when you call them by name. Claude Code applies this to `/init`, `/plan`, and `/ai-context`; Codex and Antigravity apply it to every skill. The Antigravity docs don't list `disable-model-invocation`, but Antigravity CLI 1.4.7 honors it; the App and IDE are untested. On every host, `/init` hands off to the next `init` step itself.
 
 `ralph.sh` is a standalone bash script — copy or reference `scripts/ralph.sh` and run it directly in the target project's repository.
 
