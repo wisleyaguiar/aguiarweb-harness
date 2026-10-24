@@ -10,7 +10,7 @@ user-invocable: false
 1. Resolve the plugin root as the directory two levels above this `SKILL.md`. Never assume the session working directory is the plugin root.
 2. Read `<plugin-root>/commands/init.md` completely and follow its workflow.
 3. Treat its YAML frontmatter as Claude metadata, not workflow instructions.
-4. Map a requested `SlashCommand` to the matching sibling skill below. Read that `SKILL.md` completely and execute it in the current turn:
+4. Map a requested `Skill` call to the matching sibling skill below. Read that `SKILL.md` completely and execute it in the current turn:
    - `init:project-description` → `../bc-harness-init-project-description/SKILL.md`
    - `init:user-stories` → `../bc-harness-init-user-stories/SKILL.md`
    - `init:database-schema` → `../bc-harness-init-database-schema/SKILL.md`

@@ -94,7 +94,7 @@ for name in ("init", "plan", "ai-context"):
         f"commands/{name}.md must be user-invoked"
     )
 for path in sorted((root / "commands/init").glob("*.md")):
-    # /init hops to these via SlashCommand; disable-model-invocation would block the hop.
+    # /init hops to these via the Skill tool; disable-model-invocation would block the hop.
     assert "disable-model-invocation" not in command_frontmatter(path.relative_to(root)), (
         f"{path.relative_to(root)} must stay reachable by /init"
     )

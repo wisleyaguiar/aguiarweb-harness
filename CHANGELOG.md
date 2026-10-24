@@ -15,6 +15,7 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 - Antigravity loads the 6 agents. Their `tools` field is now a YAML list; Antigravity skipped the comma-separated string.
 - `ralph-watch.sh` (and `ralph.sh --dashboard`) runs on macOS's `/bin/bash` 3.2. It crashed there before. On Bash 3.2, holding a scroll key redraws once per key instead of batching, and `--interval` rounds down to whole seconds (minimum 1). A phase written `Phase 08` shows as `F8`.
+- `/init` hands off to the next step with the `Skill` tool. It named `SlashCommand`, which Claude Code replaced when it merged commands into skills.
 
 ## [0.5.0] - 2026-10-24
 
