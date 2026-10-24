@@ -25,9 +25,10 @@ for field in ("name", "version", "description"):
 for field in ("name", "version"):
     assert codex[field] == claude[field], f"manifest drift: {field}"
 marketplace = load_json(".claude-plugin/marketplace.json")
-assert marketplace.get("metadata", {}).get("version") == codex["version"], (
-    "marketplace version must match plugin manifests"
-)
+# plugin.json owns the plugin version; a second copy in the marketplace only drifts.
+assert "version" not in marketplace.get("metadata", {}), "marketplace metadata must not carry a version"
+for entry in marketplace["plugins"]:
+    assert "version" not in entry, f"marketplace entry {entry['name']} must not carry a version"
 
 assert codex.get("skills") == "./skills/", "Codex manifest must load ./skills/"
 interface = codex.get("interface", {})
@@ -100,10 +101,11 @@ assert "PLUGIN_ROOT" in command and "CLAUDE_PLUGIN_ROOT" in command, (
 )
 
 antigravity = load_json("plugin.json")
-assert set(antigravity) <= {"$schema", "name", "description"}, (
-    "Antigravity manifest allows only $schema, name, description"
+assert set(antigravity) <= {"$schema", "name", "version", "description"}, (
+    "Antigravity manifest keeps only $schema, name, version, description"
 )
-assert antigravity.get("name") == claude["name"], "manifest drift: Antigravity name"
+for field in ("name", "version"):
+    assert antigravity.get(field) == claude[field], f"manifest drift: Antigravity {field}"
 agy_hooks = load_json("hooks.json")
 agy_command = agy_hooks["sail-guard"]["PreToolUse"][0]["hooks"][0]["command"]
 assert agy_command == "./scripts/sail-guard.sh --antigravity", (
