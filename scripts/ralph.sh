@@ -614,7 +614,6 @@ apply_from_override() {
 
 META_KEYS=()
 META_VALUES=()
-PH_FILE=()
 PH_TITLE=()
 PH_STATUS=()
 PH_ATTEMPT=()
@@ -753,7 +752,7 @@ state_init() {
   : > "$LIVE_STATE"
 
   META_KEYS=(); META_VALUES=()
-  PH_FILE=(); PH_TITLE=(); PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=()
+  PH_TITLE=(); PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=()
   TK_KEYS=(); TK_TITLES=(); TK_STATUSES=(); TK_COUNT=(); PHASE_NUMS=()
   meta_set project "$(basename "$(pwd)")"
   meta_set engine "$ENGINE"
@@ -775,7 +774,6 @@ state_init() {
   local file num title i t
   while IFS='|' read -r file num title; do
     PHASE_NUMS+=("$num")
-    PH_FILE[$num]="$file"
     PH_TITLE[$num]="$title"
     PH_ATTEMPT[$num]="0"
     PH_GATES[$num]="pending pending pending pending"
@@ -792,7 +790,7 @@ state_init() {
     while IFS= read -r t; do
       i=$((i + 1))
       # Fase ja concluida em run anterior: as tasks dela estao feitas.
-      if [ "${PH_STATUS[$num]}" = "done" ]; then task_add "$num" "$i" "$t" done
+      if [ "${PH_STATUS[$num]}" = "done" ]; then task_add "$num" "$i" "$t" "done"
       else task_add "$num" "$i" "$t" pending; fi
     done < <(phase_task_titles "$file")
     TK_COUNT[$num]="$i"
@@ -837,7 +835,7 @@ state_phase_end() {
   meta_set activity ""
   if [ "$status" = "done" ]; then
     local i
-    for ((i = 1; i <= ${TK_COUNT[$num]:-0}; i++)); do task_status_set "$num" "$i" done; done
+    for ((i = 1; i <= ${TK_COUNT[$num]:-0}; i++)); do task_status_set "$num" "$i" "done"; done
   fi
   state_flush
 }
@@ -866,7 +864,7 @@ state_tasks_from_verify() {
     verdict=$(sed -E 's/^TASK [0-9]+: ([A-Z]+).*/\1/' <<< "$line")
     task_status_get "$num" "$n" > /dev/null || continue
     case "$verdict" in
-      DONE)       task_status_set "$num" "$n" done ;;
+      DONE)       task_status_set "$num" "$n" "done" ;;
       INCOMPLETE) task_status_set "$num" "$n" incomplete ;;
     esac
   done < <(sed 's/^[[:space:]]*//' "$verify_log" | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE)' || true)
@@ -1895,7 +1893,7 @@ run_phase() {
           log "Gate 2 verde contra o codigo em HEAD; nenhum commit criado."
         fi
         mark_phase_done "$phase_file"
-        state_phase_end "$phase_num" done
+        state_phase_end "$phase_num" "done"
         return 0
       fi
 
@@ -1906,7 +1904,7 @@ run_phase() {
         return 1
       fi
       mark_phase_done "$phase_file"
-      state_phase_end "$phase_num" done
+      state_phase_end "$phase_num" "done"
       return 0
     fi
 

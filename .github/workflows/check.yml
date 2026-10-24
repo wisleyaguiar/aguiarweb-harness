@@ -15,9 +15,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shell
-        # shortcut: only shellcheck errors fail (0 today; 13 warnings remain), raise to --severity=warning once they are fixed.
         env:
-          SHELLCHECK_OPTS: --severity=error
+          SHELLCHECK_OPTS: --severity=warning
         run: |
           shellcheck --version
           scripts/check-shell.sh

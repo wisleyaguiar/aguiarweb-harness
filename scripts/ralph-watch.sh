@@ -90,12 +90,12 @@ LIVE_STATE="$STATE_DIR/live.tsv"
 # ---------------------------------------------------------------------------
 
 if $USE_COLOR; then
-  C_RESET=$'\033[0m'; C_DIM=$'\033[2m'; C_BOLD=$'\033[1m'
+  C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'
   C_CYAN=$'\033[38;5;81m'; C_GREEN=$'\033[38;5;77m'; C_YELLOW=$'\033[38;5;221m'
   C_RED=$'\033[38;5;203m'; C_GREY=$'\033[38;5;245m'; C_WHITE=$'\033[38;5;255m'
   C_HILITE=$'\033[48;5;53m'
 else
-  C_RESET=""; C_DIM=""; C_BOLD=""
+  C_RESET=""; C_BOLD=""
   C_CYAN=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_GREY=""; C_WHITE=""
   C_HILITE=""
 fi
@@ -297,7 +297,7 @@ gate_mark_plain() {
 # um grupo de variaveis (ST_LABEL_done, GM_PLAIN_pass...): Bash 3.2 nao tem -A.
 init_labels() {
   local s
-  for s in done running failed incomplete skipped pending; do
+  for s in "done" running failed incomplete skipped pending; do
     printf -v "ST_LABEL_$s" '%s' "$(status_label "$s")"
     printf -v "ST_PLAIN_$s" '%s' "$(status_plain "$s")"
   done
@@ -843,7 +843,7 @@ scroll_by() { # <delta em linhas>
 }
 
 handle_key() { # <char lido>
-  local c="$1" seq="" tail=""
+  local c="$1" seq=""
   if [ "$c" = $'\033' ]; then
     IFS= read -rsn2 -t "$KEY_WAIT" -u "$KEY_FD" seq || true
     case "$seq" in
@@ -852,7 +852,7 @@ handle_key() { # <char lido>
       '[H') FOLLOW=false; OFF=0 ;;
       '[F') FOLLOW=false; OFF=$MAX_OFF ;;
       '[5'|'[6'|'[1'|'[4')
-        IFS= read -rsn1 -t "$KEY_WAIT" -u "$KEY_FD" tail || true   # engole o '~'
+        IFS= read -rsn1 -t "$KEY_WAIT" -u "$KEY_FD" _ || true   # engole o '~'
         case "$seq" in
           '[5') scroll_by -"$VIS" ;;
           '[6') scroll_by "$VIS" ;;

@@ -19,7 +19,6 @@ trap 'rm -rf "$TMP"' EXIT
 
 PASS=0
 FAIL=0
-CURRENT=""
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
@@ -442,7 +441,7 @@ commits() { git -C "$1/repo" rev-list --count HEAD; }
 
 case_enabled() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 
-header() { CURRENT="$1"; echo -e "\n${YELLOW}== $1${NC}"; }
+header() { echo -e "\n${YELLOW}== $1${NC}"; }
 
 # O /bin/bash do macOS e 3.2: arrays associativos fariam o ralph abortar antes
 # de iniciar Codex ou Claude. Esta guarda tambem protege os CI Linux mais novos.
@@ -1147,12 +1146,12 @@ if case_enabled watch-scroll; then
     printf 'META\tphase_cur\t8\n'
     for p in $(seq 1 12); do
       st=pending; gates="pending pending pending pending"
-      [ "$p" -lt 8 ] && { st=done; gates="pass pass pass pass"; }
+      [ "$p" -lt 8 ] && { st="done"; gates="pass pass pass pass"; }
       [ "$p" -eq 8 ] && { st=running; gates="pass pass run pending"; }
       printf 'PHASE\t%s\t%s\t1\t%s\tFase numero %s\n' "$p" "$st" "$gates" "$p"
       for t in $(seq 1 4); do
         tst=pending
-        [ "$p" -lt 8 ] && tst=done
+        [ "$p" -lt 8 ] && tst="done"
         printf 'TASK\t%s\t%s\t%s\tTask %s da fase %s\n' "$p" "$t" "$tst" "$t" "$p"
       done
     done
@@ -1373,6 +1372,7 @@ STREAM
     # shellcheck disable=SC1090
     source "$RALPH" 2>/dev/null
     set +e
+    # shellcheck disable=SC2034 # lido pelas funcoes do ralph.sh (source acima)
     PHASES_DIR="$d/.phases"
     stream_watch "$d/prompt.tsv" 3 1 phase-03.md < "$d/prompt.jsonl" > /dev/null
   )
