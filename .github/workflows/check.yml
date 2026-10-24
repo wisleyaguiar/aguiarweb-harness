@@ -15,8 +15,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Shell
-        env:
-          SHELLCHECK_OPTS: --severity=warning
         run: |
           shellcheck --version
           scripts/check-shell.sh
