@@ -70,6 +70,7 @@
 #      claude o verificador usa um modelo barato (RALPH_VERIFY_MODEL, default:
 #      sonnet) — e leitura + checklist. No engine agy o verificador roda numa
 #      worktree descartavel (o agy nao tem modo read-only por invocacao).
+#      Tambem julga escopo e padroes (SCOPE/STANDARDS): so aviso, nao reprova.
 #
 # Gates verdes com a arvore limpa => a fase ja estava implementada em HEAD:
 # marcada como feita, sem commit (nao ha o que commitar).
@@ -143,7 +144,7 @@ while [[ $# -gt 0 ]]; do
     --keep-going)  KEEP_GOING=true; shift ;;
     --no-verify)   VERIFY_MODE="off"; shift ;;
     --dashboard)   DASHBOARD=true; shift ;;
-    -h|--help)     sed -n '2,82p' "$0"; exit 0 ;;
+    -h|--help)     sed -n '2,83p' "$0"; exit 0 ;;
     *)             INPUT_FILE="$1"; shift ;;
   esac
 done
@@ -1292,6 +1293,10 @@ INTRO
 build_verify_prompt() {
   local phase_file="$1" cycle="$2"
   local prompt_file="$PROMPT_DIR/${phase_file%.md}.verify-${cycle}.txt"
+  # A arvore so tem o trabalho desta fase: o preflight exige arvore limpa e
+  # toda fase anterior foi commitada (feat ou wip).
+  local changed
+  changed=$(git status --porcelain -uall | cut -c4- || true)
 
   {
     cat <<'VERIFY'
@@ -1310,9 +1315,18 @@ TASK <n>: INCOMPLETE — <o que falta>
 Regras:
 - <n> e o indice da task na fase, comecando em 1.
 - Uma linha TASK para cada task, sem excecao, sem agrupar.
-- Nao emita nenhum outro texto alem das linhas TASK.
+- Nao emita nenhum outro texto alem das linhas SCOPE, STANDARDS e TASK.
 - Codigo ausente, TODO, placeholder ou teste faltando => INCOMPLETE.
 - Na duvida, INCOMPLETE.
+
+Antes das linhas TASK, julgue mais dois eixos e emita EXATAMENTE UMA linha de
+cada, no formato `SCOPE: OK` ou `SCOPE: WARN — <motivo>` (idem para STANDARDS):
+- SCOPE: compare a lista "Arquivos alterados nesta fase" com o que as tasks
+  pedem. WARN cita o arquivo que nenhuma task pede. Teste, fixture ou migration
+  exigido por uma task esta no escopo.
+- STANDARDS: confira os arquivos alterados contra as convencoes do AGENTS.md ou
+  CLAUDE.md do projeto. WARN cita a regra e o arquivo. Sem esses arquivos, OK.
+- Esses eixos sao so aviso para o operador: nunca mudam o veredito das tasks.
 
 Execucao (headless — leia com atencao):
 - Voce roda em sessao nao-interativa: o processo MORRE quando este turno acaba.
@@ -1331,8 +1345,15 @@ Execucao (headless — leia com atencao):
   evidencia suficiente para alguma task, emita INCOMPLETE para ela — nunca
   termine o turno anunciando que vai aguardar algo.
 
-## Fase a verificar
+## Arquivos alterados nesta fase
 VERIFY
+    if [ -n "$changed" ]; then
+      printf '%s\n' "$changed" | sed 's/^/- /'
+    else
+      echo "(nenhum — a fase ja estava em HEAD)"
+    fi
+    echo
+    echo "## Fase a verificar"
     cat "$PHASES_DIR/$phase_file"
   } > "$prompt_file"
 
@@ -1728,7 +1749,17 @@ gate3_independent_verify() {
     return 1
   fi
 
+  # SCOPE/STANDARDS sao so aviso. Mesmo eco do codex das TASK: o ultimo vence.
+  local axes
+  axes=$(sed 's/^[[:space:]]*//' "$verify_log" \
+    | grep -E '^(SCOPE|STANDARDS): (OK|WARN)' \
+    | awk '{ last[$1] = $0 } END { for (a in last) print last[a] }' \
+    | grep -E '^[A-Z]+: WARN' | sort || true)
+
   success "Gate 3 — $parsed/$expected tasks confirmadas no codigo"
+  if [ -n "$axes" ]; then
+    while IFS= read -r line; do warn "Gate 3 (aviso) — $line"; done <<< "$axes"
+  fi
   return 0
 }
 

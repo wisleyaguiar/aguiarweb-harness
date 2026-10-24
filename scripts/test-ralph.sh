@@ -146,6 +146,12 @@ if [ "$verify" -eq 1 ]; then
     exit 0
   fi
 
+  # Eixos de aviso: SCOPE fica WARN; STANDARDS e revisado para OK no ultimo eco.
+  if [ "$scenario" = "verify-axes-warn" ]; then
+    printf 'SCOPE: WARN — src/extra.txt fora das tasks\nSTANDARDS: WARN — rascunho\nSTANDARDS: OK\n%s' "$verdicts"
+    exit 0
+  fi
+
   # codex exec ecoa a mensagem final mais de uma vez por turno: o mesmo bloco de
   # vereditos reaparece no log, com ruido do CLI no meio. codex-echo reproduz
   # isso; o gate 3 tem que contar tasks distintas, nao linhas.
@@ -1490,6 +1496,20 @@ if case_enabled agy-status-error; then
   assert_eq 1 "$rc" "exit 1"
   assert_eq 1 "$(commits "$d")" "nenhum commit"
   assert_contains "$d/out.log" "status SUCCESS" "gate 0 citou o status do agy"
+fi
+
+# ---------------------------------------------------------------------------
+# 41. Eixos SCOPE/STANDARDS do gate 3 viram aviso, nunca reprovam
+# ---------------------------------------------------------------------------
+if case_enabled verify-axes; then
+  header "41. gate 3: SCOPE/STANDARDS so avisam"
+  d=$(new_case verify-axes)
+  rc=$(run_ralph "$d" verify-axes-warn --engine claude --test-cmd "$d/test.sh" --max-cycles 1)
+  assert_eq 0 "$rc" "exit 0 (aviso nao reprova)"
+  assert_eq 3 "$(commits "$d")" "1 commit por fase"
+  assert_contains "$d/out.log" "Gate 3 (aviso) — SCOPE: WARN" "aviso de escopo exibido"
+  assert_not_contains "$d/out.log" "Gate 3 (aviso) — STANDARDS" "ultimo eco vence: STANDARDS revisado para OK"
+  assert_contains "$d/repo/.phases/prompts/phase-01.verify-1.txt" "src/impl-1.txt" "prompt lista os arquivos alterados"
 fi
 
 # ---------------------------------------------------------------------------
