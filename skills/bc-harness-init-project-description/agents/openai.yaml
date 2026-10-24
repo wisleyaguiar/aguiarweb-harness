@@ -2,3 +2,5 @@ interface:
   display_name: "Harness Project Description"
   short_description: "Discover the stack and define project scope."
   default_prompt: "Use $bc-harness-init-project-description to create the project description."
+policy:
+  allow_implicit_invocation: false

@@ -81,7 +81,7 @@ Derive as much of the schema as you can directly from the docs, then find what's
 - **Categorical fields** — every status/type/category/priority/role → which values seed the lookup table.
 - **Uniqueness & required fields** — which columns are `unique`, which are `not null`.
 
-Use `AskUserQuestion` for discrete decisions with clear options. Ask real open questions in plain text when the answer is not a menu. Batch related questions; don't drip one at a time. When something stays undecided, mark it as an open question rather than inventing a column.
+Use `AskUserQuestion` for discrete decisions with clear options. Ask real open questions in plain text when the answer is not a menu. Batch related questions; don't drip one at a time. Give a suggested answer with every question, based on what you already read, so the developer can confirm or correct it instead of starting from zero. With `AskUserQuestion`, list the suggestion first and add `(Recommended)` to its label. A suggestion the developer did not confirm is not a decision. When something stays undecided, mark it as an open question rather than inventing a column.
 
 ### 3. Write the document
 

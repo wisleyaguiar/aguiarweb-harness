@@ -96,7 +96,7 @@ Derive as much of the plan as you can directly from the docs, then ask the devel
 - **Ambiguous scope** — flows implied but not fully specified in the stories.
 - **Design coverage** — screens with no design reference: build to a sensible default, or wait for design?
 
-Use `AskUserQuestion` for discrete decisions with clear options. Ask real open questions in plain text when the answer is not a menu. Batch related questions; don't drip one at a time. When something stays undecided, mark it as an open question rather than inventing scope.
+Use `AskUserQuestion` for discrete decisions with clear options. Ask real open questions in plain text when the answer is not a menu. Batch related questions; don't drip one at a time. Give a suggested answer with every question, based on what you already read, so the developer can confirm or correct it instead of starting from zero. With `AskUserQuestion`, list the suggestion first and add `(Recommended)` to its label. A suggestion the developer did not confirm is not a decision. When something stays undecided, mark it as an open question rather than inventing scope.
 
 ## Rules for phasing
 

@@ -2,6 +2,7 @@
 description: Generate or refresh the canonical AGENTS context tree (AGENTS.md, CLAUDE.md, GEMINI.md, docs/agents/*.md) from the implemented code. Idempotent upsert — safe to re-run; updates only what drifted. Documents reality only; never reads .spec.
 argument-hint: "[path] [+file] [-file] [--adopt]"
 allowed-tools: Task, Agent, Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
+disable-model-invocation: true
 ---
 
 # ai-context

@@ -28,7 +28,8 @@ echo
 if command -v shellcheck > /dev/null 2>&1; then
   echo "== shellcheck"
   for f in "${FILES[@]}"; do
-    if shellcheck -x "$f"; then
+    # notas de info/style nao reprovam: o mesmo nivel aqui e no CI
+    if shellcheck -x -S warning "$f"; then
       echo "  ok    $f"
     else
       FAIL=1

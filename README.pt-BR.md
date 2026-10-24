@@ -66,7 +66,7 @@ git clone https://github.com/beerandcodeteam/beer-and-code-harness.git
 agy plugin install ./beer-and-code-harness
 ```
 
-O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravity; as mesmas `skills/` são carregadas, e o `sail-guard` roda em `run_command`. As skills têm os mesmos nomes da coluna Codex abaixo (sem `$`).
+O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravity; as mesmas `skills/` e `agents/` são carregadas, e o `sail-guard` roda em `run_command`. As skills têm os mesmos nomes da coluna Codex abaixo, com o prefixo do plugin: `/bc-harness:bc-harness-plan`.
 
 | Fluxo | Claude Code | Codex |
 |---|---|---|
@@ -79,6 +79,8 @@ O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravi
 | Contexto dos agentes | `/bc-harness:ai-context` | `$bc-harness-ai-context` |
 
 As seções de comandos abaixo usam a sintaxe curta do Claude; todos os hosts executam os mesmos arquivos canônicos de workflow.
+
+Os workflows só rodam quando você os chama pelo nome. O Claude Code aplica isso a `/init`, `/plan` e `/ai-context`; o Codex e o Antigravity, a todas as skills. A doc do Antigravity não lista `disable-model-invocation`, mas o Antigravity CLI 1.4.7 respeita o campo; o App e a IDE não foram testados. Em todos os hosts, o `/init` passa sozinho para a próxima etapa do `init`.
 
 O `ralph.sh` é um script bash independente — copie ou referencie `scripts/ralph.sh` e rode direto no repositório do projeto-alvo.
 
@@ -203,7 +205,7 @@ Sem argumento, resolve o input nesta ordem: `.spec/init/project-phases.md` → `
 | 0 | O engine terminou de verdade? | claude: `is_error` no JSON de resultado; agy: `status` no JSON de saída; codex: exit code |
 | 1 | A sessão escreveu código? | Assinatura da árvore antes/depois. **Sinal, não veredito** — fase já implementada faz o engine (corretamente) não escrever nada; o sinal alimenta a causa do ciclo de correção |
 | 2 | A suite de testes passa? | Rodada **pelo ralph**, fora da sessão do agente — o agente não pode "mentir verde" |
-| 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`) |
+| 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`). Também emite as linhas `SCOPE` (arquivos que nenhuma task pede) e `STANDARDS` (regras do `AGENTS.md`/`CLAUDE.md`): um `WARN` aparece no log e nunca reprova a fase |
 
 Qualquer gate vermelho → **ciclo de correção**: sessão nova recebe a fase inteira + a causa real da falha (nunca "os testes falharam" genérico). Default: 3 ciclos por fase.
 
@@ -364,7 +366,6 @@ scripts/
                                duplicadas nos comandos init
   check-codex-plugin.sh        valida manifests Claude/Codex/Antigravity e skills
   check-shell.sh               bash -n + shellcheck em scripts/*.sh
-docs/plans/                    planos de hardening internos do harness
 ```
 
 ## Desenvolvimento

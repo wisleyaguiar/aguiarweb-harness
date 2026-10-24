@@ -5,8 +5,7 @@
     "email": "administrador@beerandcode.com.br"
   },
   "metadata": {
-    "description": "Beer and Code harness marketplace — commands, scripts, and hooks for building robust, tested, real-world-proven projects.",
-    "version": "0.4.0"
+    "description": "Beer and Code harness marketplace — commands, scripts, and hooks for building robust, tested, real-world-proven projects."
   },
   "plugins": [
     {

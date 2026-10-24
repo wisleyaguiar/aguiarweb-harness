@@ -25,8 +25,13 @@ for field in ("name", "version", "description"):
 for field in ("name", "version"):
     assert codex[field] == claude[field], f"manifest drift: {field}"
 marketplace = load_json(".claude-plugin/marketplace.json")
-assert marketplace.get("metadata", {}).get("version") == codex["version"], (
-    "marketplace version must match plugin manifests"
+# plugin.json owns the plugin version; a second copy in the marketplace only drifts.
+assert "version" not in marketplace.get("metadata", {}), "marketplace metadata must not carry a version"
+for entry in marketplace["plugins"]:
+    assert "version" not in entry, f"marketplace entry {entry['name']} must not carry a version"
+released = re.search(r"^## \[(\d+\.\d+\.\d+)\]", (root / "CHANGELOG.md").read_text(encoding="utf-8"), re.MULTILINE)
+assert released and released.group(1) == claude["version"], (
+    f"CHANGELOG.md: latest release must be {claude['version']}, the manifest version"
 )
 
 assert codex.get("skills") == "./skills/", "Codex manifest must load ./skills/"
@@ -67,10 +72,32 @@ for name in sorted(expected):
         f"{name}: missing description"
     )
     assert "[TODO:" not in text, f"{name}: unresolved TODO placeholder"
+    # Claude Code always loads skills/ next to commands/: the wrapper must stay out of its menu and context.
+    for key in (r"disable-model-invocation:\s*true", r"user-invocable:\s*false"):
+        assert re.search(rf"^{key}$", frontmatter, re.MULTILINE), f"{name}: wrapper frontmatter needs {key}"
 
     agent_yaml = skills_root / name / "agents/openai.yaml"
     agent_text = agent_yaml.read_text(encoding="utf-8")
     assert f"${name}" in agent_text, f"{name}: default prompt must mention the skill"
+    assert re.search(r"^\s+allow_implicit_invocation:\s*false$", agent_text, re.MULTILINE), (
+        f"{name}: Codex skill must be explicit-only (${name})"
+    )
+
+for prompt in interface["defaultPrompt"]:
+    assert "$bc-harness-" in prompt, f"Codex defaultPrompt must name a skill explicitly: {prompt!r}"
+
+def command_frontmatter(relative):
+    return (root / relative).read_text(encoding="utf-8").split("\n---\n", 1)[0]
+
+for name in ("init", "plan", "ai-context"):
+    assert re.search(r"^disable-model-invocation:\s*true$", command_frontmatter(f"commands/{name}.md"), re.MULTILINE), (
+        f"commands/{name}.md must be user-invoked"
+    )
+for path in sorted((root / "commands/init").glob("*.md")):
+    # /init hops to these via the Skill tool; disable-model-invocation would block the hop.
+    assert "disable-model-invocation" not in command_frontmatter(path.relative_to(root)), (
+        f"{path.relative_to(root)} must stay reachable by /init"
+    )
 
 command = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
 assert "PLUGIN_ROOT" in command and "CLAUDE_PLUGIN_ROOT" in command, (
@@ -78,15 +105,21 @@ assert "PLUGIN_ROOT" in command and "CLAUDE_PLUGIN_ROOT" in command, (
 )
 
 antigravity = load_json("plugin.json")
-assert set(antigravity) <= {"$schema", "name", "description"}, (
-    "Antigravity manifest allows only $schema, name, description"
+assert set(antigravity) <= {"$schema", "name", "version", "description"}, (
+    "Antigravity manifest keeps only $schema, name, version, description"
 )
-assert antigravity.get("name") == claude["name"], "manifest drift: Antigravity name"
+for field in ("name", "version"):
+    assert antigravity.get(field) == claude[field], f"manifest drift: Antigravity {field}"
 agy_hooks = load_json("hooks.json")
 agy_command = agy_hooks["sail-guard"]["PreToolUse"][0]["hooks"][0]["command"]
 assert agy_command == "./scripts/sail-guard.sh --antigravity", (
     "Antigravity hook must run sail-guard relative to the plugin root"
 )
+for path in sorted((root / "agents").glob("*.md")):
+    # Antigravity skips an agent whose tools is a comma-separated string; Claude Code takes both forms.
+    assert re.search(r"^tools:[ \t]*(\[|$)", command_frontmatter(path.relative_to(root)), re.MULTILINE), (
+        f"{path.relative_to(root)}: tools must be a YAML list for Antigravity"
+    )
 
 print("Codex and Antigravity plugin structure OK")
 PY

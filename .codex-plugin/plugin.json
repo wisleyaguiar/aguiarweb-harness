@@ -1,6 +1,6 @@
 {
   "name": "bc-harness",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Beer and Code harness — structured project discovery, specification, planning, context, and validated autonomous execution.",
   "author": {
     "name": "Beer and Code",
@@ -28,9 +28,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Initialize this project with Beer and Code Harness.",
-      "Create a formal specification and phased plan for this feature.",
-      "Refresh this repository's agent context documentation."
+      "Use $bc-harness-init to initialize this project.",
+      "Use $bc-harness-plan to create a formal specification and phased plan for this feature.",
+      "Use $bc-harness-ai-context to refresh this repository's agent context documentation."
     ]
   }
 }

@@ -68,7 +68,7 @@ git clone https://github.com/beerandcodeteam/beer-and-code-harness.git
 agy plugin install ./beer-and-code-harness
 ```
 
-The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; the same `skills/` are loaded, and `sail-guard` runs on `run_command`. Skills have the same names as the Codex column below (without `$`).
+The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; the same `skills/` and `agents/` are loaded, and `sail-guard` runs on `run_command`. Skills have the same names as the Codex column below, with the plugin prefix: `/bc-harness:bc-harness-plan`.
 
 | Workflow | Claude Code | Codex |
 |---|---|---|
@@ -81,6 +81,8 @@ The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; 
 | Agent context | `/bc-harness:ai-context` | `$bc-harness-ai-context` |
 
 The command sections below use the shorter Claude syntax; all hosts execute the same canonical workflow files.
+
+The workflows run only when you call them by name. Claude Code applies this to `/init`, `/plan`, and `/ai-context`; Codex and Antigravity apply it to every skill. The Antigravity docs don't list `disable-model-invocation`, but Antigravity CLI 1.4.7 honors it; the App and IDE are untested. On every host, `/init` hands off to the next `init` step itself.
 
 `ralph.sh` is a standalone bash script — copy or reference `scripts/ralph.sh` and run it directly in the target project's repository.
 
@@ -207,7 +209,7 @@ With no argument, the input resolves in this order: `.spec/init/project-phases.m
 | 0 | Did the engine actually finish? | claude: `is_error` in the result JSON; agy: `status` in the JSON output; codex: exit code |
 | 1 | Did the session write code? | Tree signature before/after. **A signal, not a verdict** — an already-implemented phase makes the engine (correctly) write nothing; the signal feeds the fix-cycle cause |
 | 2 | Does the test suite pass? | Run **by ralph itself**, outside the agent session — the agent cannot "fake green" |
-| 3 | Is each task actually in the code? | Independent read-only verifier session that emits `TASK <n>: DONE/INCOMPLETE` per task. Runs on every phase by default (`RALPH_VERIFY=always`); on the claude engine it uses a cheap model (`sonnet`) |
+| 3 | Is each task actually in the code? | Independent read-only verifier session that emits `TASK <n>: DONE/INCOMPLETE` per task. Runs on every phase by default (`RALPH_VERIFY=always`); on the claude engine it uses a cheap model (`sonnet`). It also emits `SCOPE` (files no task asks for) and `STANDARDS` (`AGENTS.md`/`CLAUDE.md` rules) lines: a `WARN` shows up in the log and never fails the phase |
 
 Any red gate → **fix cycle**: a fresh session receives the full phase + the real failure cause (never a generic "tests failed"). Default: 3 cycles per phase.
 
@@ -368,7 +370,6 @@ scripts/
                                duplicated across the init commands
   check-codex-plugin.sh        validates Claude/Codex/Antigravity manifests and skills
   check-shell.sh               bash -n + shellcheck over scripts/*.sh
-docs/plans/                    internal hardening plans for the harness
 ```
 
 ## Development

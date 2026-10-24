@@ -1,0 +1,54 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell
+        run: |
+          shellcheck --version
+          scripts/check-shell.sh
+
+      - name: Init drift
+        run: scripts/check-init-drift.sh
+
+      - name: Plugin manifests
+        run: scripts/check-codex-plugin.sh
+
+      - name: ralph.sh (mock engines)
+        run: scripts/test-ralph.sh
+
+      - name: Claude plugin validate
+        # Pinned so a new CLI release can't turn CI red with no change here. Bump on purpose.
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.310
+          claude --version
+          claude plugin validate . --strict
+
+  bash32:
+    # macOS still ships Bash 3.2 as /bin/bash, and the scripts run with `env bash`.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tmux
+        # test-ralph.sh case 37 draws the panel inside tmux and skips without it.
+        run: brew install tmux
+
+      - name: Checks on /bin/bash 3.2
+        run: |
+          export PATH="/bin:$PATH"
+          case "$(bash -c 'echo $BASH_VERSION')" in 3.2*) ;; *) echo "expected Bash 3.2 first in PATH"; exit 1 ;; esac
+          scripts/check-init-drift.sh
+          scripts/check-codex-plugin.sh
+          scripts/test-ralph.sh

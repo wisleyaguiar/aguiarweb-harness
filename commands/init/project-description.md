@@ -68,7 +68,7 @@ Understand the idea, then find what's undefined. Ask the developer about the gap
 - **Core workflows** — the main flows, step by step.
 - **Constraints** — auth model, integrations, platform, non-goals.
 
-Use `AskUserQuestion` for discrete decisions with clear options. Ask real open questions in plain text when the answer is not a menu. Batch related questions; don't drip one at a time. Keep going until you can write each section without hand-waving. When something stays undecided, mark it explicitly as an open question rather than inventing an answer.
+Use `AskUserQuestion` for discrete decisions with clear options. Ask real open questions in plain text when the answer is not a menu. Batch related questions; don't drip one at a time. Give a suggested answer with every question, based on what you already read, so the developer can confirm or correct it instead of starting from zero. With `AskUserQuestion`, list the suggestion first and add `(Recommended)` to its label. A suggestion the developer did not confirm is not a decision. Keep going until you can write each section without hand-waving. When something stays undecided, mark it explicitly as an open question rather than inventing an answer.
 
 ### 3. Write the document
 
