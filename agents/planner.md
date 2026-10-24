@@ -100,6 +100,7 @@ Format constraints (ralph's `split_phases` dictates them):
 - Scope: in / out
 - Tier: light | standard | complete
 - Architecture references: <file list | missing>
+- Test seams: <public interfaces the task tests drive — e.g. `OrderService::place()`, `POST /orders`; never private helpers>
 
 ## AS IS — Componentes impactados
 

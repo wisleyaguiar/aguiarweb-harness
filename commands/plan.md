@@ -138,7 +138,7 @@ grep -Eq '^## Phase [0-9]+: ' .spec/features/[slug]/PHASES.md
 
 When the planner reports contracts emitted, also `test -f` each reported contract path.
 
-**Human checkpoint** — present task count, phases, risks, and contract paths when emitted; developer confirms the decomposition before closing.
+**Human checkpoint** — present task count, phases, risks, test seams, and contract paths when emitted; developer confirms the decomposition and the test seams before closing.
 
 ### 8 — Summary
 
