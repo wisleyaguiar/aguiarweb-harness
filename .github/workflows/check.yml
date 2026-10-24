@@ -39,6 +39,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install tmux
+        # test-ralph.sh case 37 draws the panel inside tmux and skips without it.
+        run: brew install tmux
+
       - name: Checks on /bin/bash 3.2
         run: |
           export PATH="/bin:$PATH"
