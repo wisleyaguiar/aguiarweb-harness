@@ -8,6 +8,7 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 - `/plan` lists the test seams (the public interfaces the tests drive) in `PLAN.md` and asks you to confirm them with the decomposition.
 - `ralph.sh` gate 3 also judges scope (files no task asks for) and standards (`AGENTS.md`/`CLAUDE.md` rules). A `SCOPE` or `STANDARDS` warning shows up in the log and never fails the phase.
+- The `/init:*` interviews give a suggested answer with every question, so you can confirm or correct it.
 
 ## [0.5.0] - 2026-10-24
 

@@ -46,6 +46,7 @@ DOWN3=("$STORIES" "$SCHEMA" "$PHASES")
 check 'Use `AskUserQuestion` for discrete decisions with clear options' "${ALL4[@]}"
 check "Ask real open questions in plain text when the answer is not a menu. Batch related questions; don't drip one at a time." "${ALL4[@]}"
 check 'as an open question rather than inventing' "${ALL4[@]}"
+check 'Give a suggested answer with every question, based on what you already read, so the developer can confirm or correct it instead of starting from zero. With `AskUserQuestion`, list the suggestion first and add `(Recommended)` to its label. A suggestion the developer did not confirm is not a decision.' "${ALL4[@]}"
 
 # --- Re-run contract (all 4) ---
 check 'Re-running this command must **update** the existing document, never rebuild it from scratch — `.spec` belongs to the developer, and manual edits there are decisions, not noise.' "${ALL4[@]}"
