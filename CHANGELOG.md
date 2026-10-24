@@ -10,6 +10,10 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 - `ralph.sh` gate 3 also judges scope (files no task asks for) and standards (`AGENTS.md`/`CLAUDE.md` rules). A `SCOPE` or `STANDARDS` warning shows up in the log and never fails the phase.
 - The `/init:*` interviews give a suggested answer with every question, so you can confirm or correct it.
 
+### Fixed
+
+- Antigravity loads the 6 agents. Their `tools` field is now a YAML list; Antigravity skipped the comma-separated string.
+
 ## [0.5.0] - 2026-10-24
 
 ### Changed

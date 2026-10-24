@@ -66,7 +66,7 @@ git clone https://github.com/beerandcodeteam/beer-and-code-harness.git
 agy plugin install ./beer-and-code-harness
 ```
 
-O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravity; as mesmas `skills/` são carregadas, e o `sail-guard` roda em `run_command`. As skills têm os mesmos nomes da coluna Codex abaixo (sem `$`).
+O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravity; as mesmas `skills/` e `agents/` são carregadas, e o `sail-guard` roda em `run_command`. As skills têm os mesmos nomes da coluna Codex abaixo (sem `$`).
 
 | Fluxo | Claude Code | Codex |
 |---|---|---|

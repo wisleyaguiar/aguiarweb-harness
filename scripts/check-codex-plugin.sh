@@ -115,6 +115,11 @@ agy_command = agy_hooks["sail-guard"]["PreToolUse"][0]["hooks"][0]["command"]
 assert agy_command == "./scripts/sail-guard.sh --antigravity", (
     "Antigravity hook must run sail-guard relative to the plugin root"
 )
+for path in sorted((root / "agents").glob("*.md")):
+    # Antigravity skips an agent whose tools is a comma-separated string; Claude Code takes both forms.
+    assert re.search(r"^tools:[ \t]*(\[|$)", command_frontmatter(path.relative_to(root)), re.MULTILINE), (
+        f"{path.relative_to(root)}: tools must be a YAML list for Antigravity"
+    )
 
 print("Codex and Antigravity plugin structure OK")
 PY
