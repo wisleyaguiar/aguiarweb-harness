@@ -29,6 +29,10 @@ marketplace = load_json(".claude-plugin/marketplace.json")
 assert "version" not in marketplace.get("metadata", {}), "marketplace metadata must not carry a version"
 for entry in marketplace["plugins"]:
     assert "version" not in entry, f"marketplace entry {entry['name']} must not carry a version"
+released = re.search(r"^## \[(\d+\.\d+\.\d+)\]", (root / "CHANGELOG.md").read_text(encoding="utf-8"), re.MULTILINE)
+assert released and released.group(1) == claude["version"], (
+    f"CHANGELOG.md: latest release must be {claude['version']}, the manifest version"
+)
 
 assert codex.get("skills") == "./skills/", "Codex manifest must load ./skills/"
 interface = codex.get("interface", {})

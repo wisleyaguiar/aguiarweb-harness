@@ -31,4 +31,8 @@ claude plugin validate . --strict
 
 ## Releases
 
-Installed users get changes only when the version changes. To release, bump `version` in `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `plugin.json`. Never set a version in `.claude-plugin/marketplace.json`.
+Installed users get changes only when the version changes. To release:
+
+1. Move the `[Unreleased]` notes in `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading.
+2. Bump `version` in `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, and `plugin.json`. Never set a version in `.claude-plugin/marketplace.json`.
+3. Commit as `chore(release): bump version to x.y.z`, then run `claude plugin tag` to create the `bc-harness--vx.y.z` tag.
