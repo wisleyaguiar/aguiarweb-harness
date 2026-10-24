@@ -35,3 +35,17 @@ jobs:
         run: |
           npm install -g @anthropic-ai/claude-code
           claude plugin validate . --strict
+
+  bash32:
+    # macOS still ships Bash 3.2 as /bin/bash, and the scripts run with `env bash`.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checks on /bin/bash 3.2
+        run: |
+          export PATH="/bin:$PATH"
+          case "$(bash -c 'echo $BASH_VERSION')" in 3.2*) ;; *) echo "expected Bash 3.2 first in PATH"; exit 1 ;; esac
+          scripts/check-init-drift.sh
+          scripts/check-codex-plugin.sh
+          scripts/test-ralph.sh

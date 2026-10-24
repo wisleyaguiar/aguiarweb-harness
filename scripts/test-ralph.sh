@@ -447,9 +447,16 @@ header() { CURRENT="$1"; echo -e "\n${YELLOW}== $1${NC}"; }
 # O /bin/bash do macOS e 3.2: arrays associativos fariam o ralph abortar antes
 # de iniciar Codex ou Claude. Esta guarda tambem protege os CI Linux mais novos.
 if case_enabled bash32-compat; then
-  header "0. ralph permanece compativel com Bash 3.2"
-  assert_not_contains "$RALPH" "declare -A" "sem arrays associativos globais"
-  assert_not_contains "$RALPH" "local -A" "sem arrays associativos locais"
+  header "0. ralph e ralph-watch permanecem compativeis com Bash 3.2"
+  for f in "$RALPH" "$ROOT/scripts/ralph-watch.sh"; do
+    assert_not_contains "$f" "declare -A" "$(basename "$f"): sem arrays associativos globais"
+    assert_not_contains "$f" "local -A" "$(basename "$f"): sem arrays associativos locais"
+    assert_not_contains "$f" "mapfile" "$(basename "$f"): sem mapfile"
+    assert_not_contains "$f" "readarray" "$(basename "$f"): sem readarray"
+    assert_not_contains "$f" ",,}" "$(basename "$f"): sem \${var,,}"
+    # Bash 3.2 recusa `read -t` fracionado ("invalid timeout specification")
+    assert_not_contains "$f" " -t 0." "$(basename "$f"): sem read -t fracionado literal"
+  done
 fi
 
 # ---------------------------------------------------------------------------
@@ -1510,6 +1517,34 @@ if case_enabled verify-axes; then
   assert_contains "$d/out.log" "Gate 3 (aviso) — SCOPE: WARN" "aviso de escopo exibido"
   assert_not_contains "$d/out.log" "Gate 3 (aviso) — STANDARDS" "ultimo eco vence: STANDARDS revisado para OK"
   assert_contains "$d/repo/.phases/prompts/phase-01.verify-1.txt" "src/impl-1.txt" "prompt lista os arquivos alterados"
+fi
+
+# ---------------------------------------------------------------------------
+# 42. ralph-watch indexa fase e task por inteiro (Bash 3.2 nao tem -A): numero
+#     com zero a esquerda nao vira octal e linha com numero invalido e ignorada.
+# ---------------------------------------------------------------------------
+if case_enabled watch-int-keys; then
+  header "42. ralph-watch aceita fase 08 e ignora numero invalido"
+  d="$TMP/watch-int-keys"
+  mkdir -p "$d/repo/.phases/state"
+  {
+    printf 'META\tstatus\trunning\n'
+    printf 'META\tphase_cur\t08\n'
+    printf 'META\tbad-key\tx\n'
+    printf 'PHASE\tabc\tdone\t1\t\tFase lixo\n'
+    printf 'PHASE\t08\trunning\t1\tpass run pending pending\tFase oito\n'
+    printf 'TASK\t08\t01\trunning\tTask um\n'
+    printf 'TASK\t08\tx\tdone\tTask lixo\n'
+  } > "$d/repo/.phases/state/run.tsv"
+  printf 'PHASE\t08\nLIVE\t1\tdone\n' > "$d/repo/.phases/state/live.tsv"
+
+  RALPH_WATCH_COLS=110 "$ROOT/scripts/ralph-watch.sh" --once --no-color "$d/repo" > "$d/panel.txt" 2> "$d/err.txt"
+  assert_eq 0 "$?" "painel desenhou"
+  assert_eq "" "$(cat "$d/err.txt")" "nada no stderr"
+  assert_contains "$d/panel.txt" "Fase:      8 · Fase oito" "phase_cur 08 acha a fase 8"
+  assert_contains "$d/panel.txt" "Task um" "task 01 vira task 1"
+  assert_contains "$d/panel.txt" "Tasks  1/1" "live.tsv marcou a task 1 como concluida"
+  assert_not_contains "$d/panel.txt" "lixo" "linhas com numero invalido ignoradas"
 fi
 
 # ---------------------------------------------------------------------------

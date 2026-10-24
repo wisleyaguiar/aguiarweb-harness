@@ -104,16 +104,30 @@ fi
 # Estado lido
 # ---------------------------------------------------------------------------
 
-declare -A META PH_STATUS PH_ATTEMPT PH_GATES PH_TITLE
-declare -A TK_STATUS TK_TITLE TK_COUNT
+# O /bin/bash do macOS e 3.2, sem array associativo. A fase e um inteiro (o
+# ralph so aceita `## Phase N:`), entao serve de indice direto; META vira uma
+# variavel por chave (META_status, META_pid...).
+# shortcut: a task usa o indice fase*1000+task, que colide com 1000+ tasks numa
+# fase; trocar por arrays paralelos se um plano chegar perto disso.
+declare -a PH_STATUS PH_ATTEMPT PH_GATES PH_TITLE
+declare -a TK_STATUS TK_TITLE TK_COUNT
 declare -a PHASE_NUMS
 LIVE_PHASE=""
 
 reset_state() {
-  META=(); PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=(); PH_TITLE=()
+  unset "${!META_@}"
+  PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=(); PH_TITLE=()
   TK_STATUS=(); TK_TITLE=(); TK_COUNT=()
   PHASE_NUMS=()
   LIVE_PHASE=""
+}
+
+# uint_v <destino> <texto> — falha se o texto nao for inteiro. Indice de array
+# indexado e aritmetico: lixo do TSV viraria erro, e o 10# impede que "08" seja
+# lido como octal.
+uint_v() {
+  case "$2" in ''|*[!0-9]*) return 1 ;; esac
+  printf -v "$1" '%d' "$((10#$2))"
 }
 
 read_state() {
@@ -123,14 +137,21 @@ read_state() {
   local kind a b c d e
   while IFS=$'\t' read -r kind a b c d e; do
     case "$kind" in
-      META)  META[$a]="$b" ;;
+      META)
+        case "$a" in ''|*[!A-Za-z0-9_]*) continue ;; esac
+        # phase_cur indexa PH_TITLE e PHASE_ROW: precisa do mesmo inteiro da fase
+        if [ "$a" = phase_cur ]; then uint_v b "$b" || continue; fi
+        printf -v "META_$a" '%s' "$b"
+        ;;
       PHASE)
+        uint_v a "$a" || continue
         PHASE_NUMS+=("$a")
         PH_STATUS[$a]="$b"; PH_ATTEMPT[$a]="$c"; PH_GATES[$a]="$d"; PH_TITLE[$a]="$e"
         TK_COUNT[$a]="${TK_COUNT[$a]:-0}"
         ;;
       TASK)
-        TK_STATUS[$a:$b]="$c"; TK_TITLE[$a:$b]="$d"
+        uint_v a "$a" && uint_v b "$b" || continue
+        TK_STATUS[$a*1000+$b]="$c"; TK_TITLE[$a*1000+$b]="$d"
         TK_COUNT[$a]="$b"
         ;;
     esac
@@ -140,14 +161,15 @@ read_state() {
   if [ -f "$LIVE_STATE" ]; then
     while IFS=$'\t' read -r kind a b c; do
       case "$kind" in
-        PHASE)    LIVE_PHASE="$a" ;;
-        ACTIVITY) [ -n "$a" ] && META[activity]="$a" ;;
+        PHASE)    uint_v LIVE_PHASE "$a" || LIVE_PHASE="" ;;
+        ACTIVITY) [ -n "$a" ] && META_activity="$a" ;;
         LIVE)
-          if [ -n "$LIVE_PHASE" ] && [ -n "${TK_STATUS[$LIVE_PHASE:$a]+x}" ]; then
+          uint_v a "$a" || continue
+          if [ -n "$LIVE_PHASE" ] && [ -n "${TK_STATUS[$LIVE_PHASE*1000+$a]+x}" ]; then
             # nao rebaixa uma task ja confirmada pelo verificador (gate 3)
-            case "${TK_STATUS[$LIVE_PHASE:$a]}" in
+            case "${TK_STATUS[$LIVE_PHASE*1000+$a]}" in
               done|incomplete) ;;
-              *) TK_STATUS[$LIVE_PHASE:$a]="$b" ;;
+              *) TK_STATUS[$LIVE_PHASE*1000+$a]="$b" ;;
             esac
           fi
           ;;
@@ -271,20 +293,29 @@ gate_mark_plain() {
 # Rotulos memoizados. O vocabulario e fechado (6 status, 5 marcas de gate), e as
 # funcoes acima continuam sendo a unica fonte de verdade: a tabela e derivada
 # delas uma vez no startup, entao mudar um rotulo continua sendo mexer em um
-# lugar so. Quem monta linha le da tabela e nao paga fork nenhum.
-declare -A ST_LABEL ST_PLAIN GM_LABEL GM_PLAIN
+# lugar so. Quem monta linha le da tabela e nao paga fork nenhum. Cada tabela e
+# um grupo de variaveis (ST_LABEL_done, GM_PLAIN_pass...): Bash 3.2 nao tem -A.
 init_labels() {
   local s
   for s in done running failed incomplete skipped pending; do
-    ST_LABEL[$s]=$(status_label "$s")
-    ST_PLAIN[$s]=$(status_plain "$s")
+    printf -v "ST_LABEL_$s" '%s' "$(status_label "$s")"
+    printf -v "ST_PLAIN_$s" '%s' "$(status_plain "$s")"
   done
   for s in pass fail run skip pending; do
-    GM_LABEL[$s]=$(gate_mark "$s")
-    GM_PLAIN[$s]=$(gate_mark_plain "$s")
+    printf -v "GM_LABEL_$s" '%s' "$(gate_mark "$s")"
+    printf -v "GM_PLAIN_$s" '%s' "$(gate_mark_plain "$s")"
   done
 }
 init_labels
+
+# label_v <destino> <tabela> <chave> — le <tabela>_<chave>; chave fora do
+# vocabulario (o status vem do TSV) cai no rotulo pending.
+label_v() {
+  local __k="${2}_$3"
+  case "$3" in ''|*[!a-z]*) __k="${2}_pending" ;; esac
+  [ -n "${!__k+x}" ] || __k="${2}_pending"
+  printf -v "$1" '%s' "${!__k}"
+}
 
 # gates_cell_v <destino> <spec> <colorido:0|1> — o gates_cell sem subshell.
 gates_cell_v() {
@@ -292,14 +323,16 @@ gates_cell_v() {
   # de gates (pending|run|pass|fail|skip), sem espaco nem metacaractere de glob.
   # shellcheck disable=SC2206
   local -a __g=( $2 )
-  local __i __out="" __st
+  local __i __out="" __st __m
   for __i in 0 1 2 3; do
     [ "$__i" -gt 0 ] && __out+=" "
     __st="${__g[$__i]:-pending}"
     if [ "$3" = "1" ]; then
-      __out+="${C_GREY}G$__i${C_RESET} ${GM_LABEL[$__st]:-${GM_LABEL[pending]}}"
+      label_v __m GM_LABEL "$__st"
+      __out+="${C_GREY}G$__i${C_RESET} $__m"
     else
-      __out+="G$__i ${GM_PLAIN[$__st]:-${GM_PLAIN[pending]}}"
+      label_v __m GM_PLAIN "$__st"
+      __out+="G$__i $__m"
     fi
   done
   printf -v "$1" '%s' "$__out"
@@ -411,49 +444,49 @@ task_counts() {
   for num in "${PHASE_NUMS[@]}"; do
     for ((i=1; i<=${TK_COUNT[$num]:-0}; i++)); do
       TK_TOTAL=$((TK_TOTAL + 1))
-      [ "${TK_STATUS[$num:$i]:-pending}" = "done" ] && TK_DONE=$((TK_DONE + 1))
+      [ "${TK_STATUS[$num*1000+$i]:-pending}" = "done" ] && TK_DONE=$((TK_DONE + 1))
     done
   done
 }
 
 run_status_label() {
-  case "${META[status]:-running}" in
+  case "${META_status:-running}" in
     running)  printf '%s▶ Em execução%s' "$C_YELLOW" "$C_RESET" ;;
     waiting)  printf '%s⏸ Aguardando reset de limite%s' "$C_YELLOW" "$C_RESET" ;;
     finished) printf '%s✓ Concluído%s' "$C_GREEN" "$C_RESET" ;;
     failed)   printf '%s✗ Falhou%s' "$C_RED" "$C_RESET" ;;
-    *)        printf '%s· %s%s' "$C_GREY" "${META[status]:-?}" "$C_RESET" ;;
+    *)        printf '%s· %s%s' "$C_GREY" "${META_status:-?}" "$C_RESET" ;;
   esac
 }
 
 run_status_plain() {
-  case "${META[status]:-running}" in
+  case "${META_status:-running}" in
     running)  printf '▶ Em execução' ;;
     waiting)  printf '⏸ Aguardando reset de limite' ;;
     finished) printf '✓ Concluído' ;;
     failed)   printf '✗ Falhou' ;;
-    *)        printf '· %s' "${META[status]:-?}" ;;
+    *)        printf '· %s' "${META_status:-?}" ;;
   esac
 }
 
 draw_header() {
   local now elapsed
   now=$(date +%s)
-  elapsed=$(( now - ${META[started]:-$now} ))
-  [ "${META[status]:-running}" != "running" ] && [ -n "${META[ended]:-}" ] \
-    && elapsed=$(( ${META[ended]} - ${META[started]:-$now} ))
+  elapsed=$(( now - ${META_started:-$now} ))
+  [ "${META_status:-running}" != "running" ] && [ -n "${META_ended:-}" ] \
+    && elapsed=$(( ${META_ended} - ${META_started:-$now} ))
 
   printf '\n%s%sRALPH%s\n\n' "$C_BOLD" "$C_CYAN" "$C_RESET"
 
   local col=$(( (W - 4) / 3 ))
   printf '%sProjeto:%s %s  %sEngine:%s %s  %sStatus:%s %s\n' \
-    "$C_CYAN" "$C_RESET" "$(pad "${META[project]:-?}" $((col - 10)))" \
-    "$C_CYAN" "$C_RESET" "$(pad "${META[engine]:-?}" $((col - 9)))" \
+    "$C_CYAN" "$C_RESET" "$(pad "${META_project:-?}" $((col - 10)))" \
+    "$C_CYAN" "$C_RESET" "$(pad "${META_engine:-?}" $((col - 9)))" \
     "$C_CYAN" "$C_RESET" "$(run_status_label)"
   printf '%sDuração:%s %s  %sRun:%s %s  %sPID:%s %s\n\n' \
     "$C_CYAN" "$C_RESET" "$(pad "$(fmt_duration "$elapsed")" $((col - 10)))" \
-    "$C_CYAN" "$C_RESET" "$(pad "${META[run]:-?}" $((col - 6)))" \
-    "$C_CYAN" "$C_RESET" "${META[pid]:-?}"
+    "$C_CYAN" "$C_RESET" "$(pad "${META_run:-?}" $((col - 6)))" \
+    "$C_CYAN" "$C_RESET" "${META_pid:-?}"
 }
 
 draw_panels() {
@@ -482,24 +515,24 @@ draw_panels() {
   L+=("$l1"); printf -v tmp 'Fases  %s  [%s]  %s' "$n_ph" "$blank" "$p_ph"; LP+=("$tmp")
   L+=("$l2"); printf -v tmp 'Tasks  %s  [%s]  %s' "$n_tk" "$blank" "$p_tk"; LP+=("$tmp")
   L+=(""); LP+=("")
-  printf -v tmp '%sTeste:%s %s' "$C_GREY" "$C_RESET" "${META[test_cmd]:-—}"; L+=("$tmp")
-  printf -v tmp 'Teste: %s' "${META[test_cmd]:-—}"; LP+=("$tmp")
+  printf -v tmp '%sTeste:%s %s' "$C_GREY" "$C_RESET" "${META_test_cmd:-—}"; L+=("$tmp")
+  printf -v tmp 'Teste: %s' "${META_test_cmd:-—}"; LP+=("$tmp")
 
-  local cur="${META[phase_cur]:-}"
+  local cur="${META_phase_cur:-}"
   local fase_txt="—"
   [ -n "$cur" ] && fase_txt="$cur · ${PH_TITLE[$cur]:-}"
 
-  local cyc="${META[cycle]:-—}/${META[cycle_max]:-—}"
+  local cyc="${META_cycle:-—}/${META_cycle_max:-—}"
   printf -v tmp '%sFase:%s      %s' "$C_CYAN" "$C_RESET" "$fase_txt"; R+=("$tmp")
   printf -v tmp 'Fase:      %s' "$fase_txt"; RP+=("$tmp")
   printf -v tmp '%sCiclo:%s     %s    %sGate:%s %s' \
-    "$C_CYAN" "$C_RESET" "$cyc" "$C_CYAN" "$C_RESET" "${META[gate]:-—}"; R+=("$tmp")
-  printf -v tmp 'Ciclo:     %s    Gate: %s' "$cyc" "${META[gate]:-—}"; RP+=("$tmp")
-  printf -v tmp '%sAtividade:%s %s' "$C_CYAN" "$C_RESET" "${META[activity]:-—}"; R+=("$tmp")
-  printf -v tmp 'Atividade: %s' "${META[activity]:-—}"; RP+=("$tmp")
+    "$C_CYAN" "$C_RESET" "$cyc" "$C_CYAN" "$C_RESET" "${META_gate:-—}"; R+=("$tmp")
+  printf -v tmp 'Ciclo:     %s    Gate: %s' "$cyc" "${META_gate:-—}"; RP+=("$tmp")
+  printf -v tmp '%sAtividade:%s %s' "$C_CYAN" "$C_RESET" "${META_activity:-—}"; R+=("$tmp")
+  printf -v tmp 'Atividade: %s' "${META_activity:-—}"; RP+=("$tmp")
   printf -v tmp '%sÚltimo erro:%s %s%s%s' \
-    "$C_CYAN" "$C_RESET" "$C_RED" "${META[last_error]:-—}" "$C_RESET"; R+=("$tmp")
-  printf -v tmp 'Último erro: %s' "${META[last_error]:-—}"; RP+=("$tmp")
+    "$C_CYAN" "$C_RESET" "$C_RED" "${META_last_error:-—}" "$C_RESET"; R+=("$tmp")
+  printf -v tmp 'Último erro: %s' "${META_last_error:-—}"; RP+=("$tmp")
 
   # Cabecalhos e rodapes dos dois boxes, lado a lado
   local top_l top_r bot_l bot_r
@@ -524,7 +557,7 @@ draw_panels() {
 # Linhas da tabela montadas uma vez por frame, antes de saber o recorte: quem
 # rola escolhe o intervalo, nao remonta o conteudo.
 declare -a ROWS ROW_HL
-declare -A PHASE_ROW PHASE_END
+declare -a PHASE_ROW PHASE_END
 RUN_ROW=-1
 
 build_rows() {
@@ -547,7 +580,7 @@ build_rows() {
   cell_v c_gates_tk "${C_GREY}${dash_gates}${C_RESET}" "$dash_gates" "$COL_GATES"
 
   local num i st tries row
-  local t_name c_name c_id c_st c_try g_col g_pln c_gates
+  local t_name c_name c_id c_st c_try g_col g_pln c_gates lbl pln
   for num in "${PHASE_NUMS[@]}"; do
     st="${PH_STATUS[$num]}"
     tries="${PH_ATTEMPT[$num]}"
@@ -557,8 +590,8 @@ build_rows() {
 
     pad_v t_name "${PH_TITLE[$num]}" "$COL_NAME"
     cell_v c_name "${C_WHITE}${t_name}${C_RESET}" "$t_name" "$COL_NAME"
-    cell_v c_st "${ST_LABEL[$st]:-${ST_LABEL[pending]}}" \
-                "${ST_PLAIN[$st]:-${ST_PLAIN[pending]}}" "$COL_STATUS"
+    label_v lbl ST_LABEL "$st"; label_v pln ST_PLAIN "$st"
+    cell_v c_st "$lbl" "$pln" "$COL_STATUS"
     pad_v c_id "F$num" "$COL_ID"
     pad_v c_try "$tries" "$COL_TRY"
     gates_cell_v g_col "${PH_GATES[$num]}" 1
@@ -578,12 +611,12 @@ build_rows() {
 
     local tst ttitle t_id
     for ((i=1; i<=${TK_COUNT[$num]:-0}; i++)); do
-      tst="${TK_STATUS[$num:$i]:-pending}"
-      pad_v ttitle "  ↳ ${TK_TITLE[$num:$i]}" "$COL_NAME"
+      tst="${TK_STATUS[$num*1000+$i]:-pending}"
+      pad_v ttitle "  ↳ ${TK_TITLE[$num*1000+$i]}" "$COL_NAME"
       pad_v t_id "T$i" "$COL_ID"
       cell_v c_id "${C_GREY}${t_id}${C_RESET}" "$t_id" "$COL_ID"
-      cell_v c_st "${ST_LABEL[$tst]:-${ST_LABEL[pending]}}" \
-                  "${ST_PLAIN[$tst]:-${ST_PLAIN[pending]}}" "$COL_STATUS"
+      label_v lbl ST_LABEL "$tst"; label_v pln ST_PLAIN "$tst"
+      cell_v c_st "$lbl" "$pln" "$COL_STATUS"
       printf -v row '%s %s %s %s %s %s %s %s %s %s' "$V" \
         "$c_id" "$V" "$ttitle" "$V" "$c_st" "$V" "$c_try_tk" "$V" "$c_gates_tk"
       ROWS+=("$row")
@@ -607,11 +640,11 @@ clamp_off() {
 # Recorte automatico: mostra o bloco da fase corrente inteiro quando ele cabe;
 # quando nao cabe, centra a task em execucao.
 follow_offset() {
-  local cur="${META[phase_cur]:-}"
+  local cur="${META_phase_cur:-}"
   if [ -z "$cur" ] || [ -z "${PHASE_ROW[$cur]:-}" ]; then
     # sem fase corrente (run terminado, por exemplo): mantem o comeco a vista
     OFF=0
-    [ "${META[status]:-running}" = "failed" ] && [ "$RUN_ROW" -ge 0 ] \
+    [ "${META_status:-running}" = "failed" ] && [ "$RUN_ROW" -ge 0 ] \
       && OFF=$(( RUN_ROW - VIS / 2 ))
     clamp_off
     return
@@ -643,7 +676,7 @@ build_frame() {
   # substituicao ${HEAD//[^$'\n']/} avalia a classe caractere a caractere e
   # mediu 44ms contra 2ms do wc num HEAD de 2KB. Fork nao e sempre o vilao.
   head_n=$(printf '%s\n' "$HEAD" | wc -l)
-  [ -n "${META[note]:-}" ] && note_n=2
+  [ -n "${META_note:-}" ] && note_n=2
 
   # 4 = topo, cabecalho de coluna, separador e rodape da tabela.
   # 1 = folga da ultima linha, que o terminal usaria para rolar o frame.
@@ -757,8 +790,8 @@ draw_scroll_footer() {
 render() {
   printf '%s\n' "$HEAD"
   draw_table
-  if [ -n "${META[note]:-}" ]; then
-    printf '\n%s%s%s\n' "$C_YELLOW" "${META[note]}" "$C_RESET"
+  if [ -n "${META_note:-}" ]; then
+    printf '\n%s%s%s\n' "$C_YELLOW" "${META_note}" "$C_RESET"
   fi
 }
 
@@ -812,14 +845,14 @@ scroll_by() { # <delta em linhas>
 handle_key() { # <char lido>
   local c="$1" seq="" tail=""
   if [ "$c" = $'\033' ]; then
-    IFS= read -rsn2 -t 0.05 -u "$KEY_FD" seq || true
+    IFS= read -rsn2 -t "$KEY_WAIT" -u "$KEY_FD" seq || true
     case "$seq" in
       '[A') scroll_by -1 ;;
       '[B') scroll_by 1 ;;
       '[H') FOLLOW=false; OFF=0 ;;
       '[F') FOLLOW=false; OFF=$MAX_OFF ;;
       '[5'|'[6'|'[1'|'[4')
-        IFS= read -rsn1 -t 0.05 -u "$KEY_FD" tail || true   # engole o '~'
+        IFS= read -rsn1 -t "$KEY_WAIT" -u "$KEY_FD" tail || true   # engole o '~'
         case "$seq" in
           '[5') scroll_by -"$VIS" ;;
           '[6') scroll_by "$VIS" ;;
@@ -847,7 +880,17 @@ handle_key() { # <char lido>
 # Teto de teclas absorvidas num tick. Segurar uma tecla ou colar texto pode
 # encher o buffer; alem disso desenha o que ja acumulou e volta na proxima volta,
 # para o painel nao parar de atualizar enquanto drena.
-DRAIN_MAX=64
+KEY_WAIT=0.05 DRAIN_WAIT=0.01 DRAIN_MAX=64
+
+# Bash 3.2 (o /bin/bash do macOS) so aceita `read -t` inteiro e nao tem `-t 0`
+# que sirva para testar o buffer. Os bytes de uma seta chegam juntos, entao 1s so
+# atrasa um ESC solto; o dreno fica desligado (cada tecla paga um frame, mas
+# responde na hora em vez de esperar 1s), e o intervalo vira inteiro.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+  KEY_WAIT=1 DRAIN_MAX=0
+  INTERVAL=${INTERVAL%%.*}
+  [ "${INTERVAL:-0}" -ge 1 ] 2>/dev/null || INTERVAL=1
+fi
 
 # Espera INTERVAL segundos, mas acorda na hora se o usuario apertar algo — e o
 # que faz a rolagem responder sem esperar o proximo frame.
@@ -869,7 +912,7 @@ wait_tick() {
     # chegando"; `read -t 0` nao serve, porque testa sem consumir o byte.
     local drained=0
     while [ "$drained" -lt "$DRAIN_MAX" ] \
-      && IFS= read -rsn1 -t 0.01 -u "$KEY_FD" c; do
+      && IFS= read -rsn1 -t "$DRAIN_WAIT" -u "$KEY_FD" c; do
       handle_key "$c"
       drained=$(( drained + 1 ))
     done
@@ -930,7 +973,7 @@ main() {
       # linha de exatamente W colunas deixa o cursor com wrap pendente na ultima
       # coluna — um \033[K ali apagaria o proprio caractere que acabou de sair.
       printf '\033[H%s\033[J' $'\033[K'"${frame//$'\n'/$'\n\033[K'}"
-      case "${META[status]:-running}" in
+      case "${META_status:-running}" in
         finished|failed)
           $EMBEDDED && break
           ;;
