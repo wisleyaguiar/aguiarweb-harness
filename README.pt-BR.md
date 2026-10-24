@@ -366,7 +366,6 @@ scripts/
                                duplicadas nos comandos init
   check-codex-plugin.sh        valida manifests Claude/Codex/Antigravity e skills
   check-shell.sh               bash -n + shellcheck em scripts/*.sh
-docs/plans/                    planos de hardening internos do harness
 ```
 
 ## Desenvolvimento
