@@ -29,8 +29,10 @@ jobs:
         run: scripts/test-ralph.sh
 
       - name: Claude plugin validate
+        # Pinned so a new CLI release can't turn CI red with no change here. Bump on purpose.
         run: |
-          npm install -g @anthropic-ai/claude-code
+          npm install -g @anthropic-ai/claude-code@2.1.310
+          claude --version
           claude plugin validate . --strict
 
   bash32:
