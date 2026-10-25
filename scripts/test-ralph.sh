@@ -1548,6 +1548,28 @@ if case_enabled watch-int-keys; then
 fi
 
 # ---------------------------------------------------------------------------
+# 43. /retro le o que o ralph deixa em .phases/: roda o bloco do passo 2 de
+#     commands/retro.md num run real. Quebra se nomes ou cabecalhos mudarem.
+# ---------------------------------------------------------------------------
+if case_enabled retro-sources; then
+  header "43. /retro acha a causa e o ultimo veredito em .phases/"
+  retro_block=$(awk '/^### 2 /{s=1} s && p && /^```$/{exit} s && p{print} s && /^```bash$/{p=1}' "$ROOT/commands/retro.md")
+
+  d=$(new_case retro-sources)
+  run_ralph "$d" verify-incomplete-once --engine claude --test-cmd "$d/test.sh" --max-cycles 2 > /dev/null
+  (cd "$d/repo" && bash -c "$retro_block") > "$d/retro.txt" 2>&1
+  assert_contains "$d/retro.txt" "phase-01.md|1|" "manifest mapeia fase para slug"
+  assert_contains "$d/retro.txt" "== .phases/prompts/phase-01.cycle-2.txt" "acha o prompt de correcao"
+  assert_contains "$d/retro.txt" ".phases/logs/phase-01.verify-1.log: TASK 1: INCOMPLETE" "acha a task incompleta no log do gate 3"
+
+  d=$(new_case retro-axes)
+  run_ralph "$d" verify-axes-warn --engine claude --test-cmd "$d/test.sh" --max-cycles 1 > /dev/null
+  (cd "$d/repo" && bash -c "$retro_block") > "$d/retro.txt" 2>&1
+  assert_contains "$d/retro.txt" "phase-01.verify-1.log: SCOPE: WARN" "acha o aviso de escopo"
+  assert_not_contains "$d/retro.txt" "STANDARDS" "ultimo eco vence: STANDARDS revisado para OK"
+fi
+
+# ---------------------------------------------------------------------------
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 if [ "$FAIL" -eq 0 ]; then

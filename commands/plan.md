@@ -165,9 +165,8 @@ Closing lines: unresolved markers count (when > 0), then the execution handoff �
 
 ## Rules
 
-- **Thin router** — no SPEC/PLAN template content in this file; agents own the shapes.
 - **Delegate plugin-namespaced** (`bc-harness:specifier`, `bc-harness:clarifier`, `bc-harness:planner`), never bare.
-- **Never write application code.** The pipeline writes only under `.spec/features/[slug]/` (router itself only under `.handoff/`).
+- **Write only under `.spec/features/[slug]/`** (the router itself only under `.handoff/`) — never application code.
 - **No issue tracker** — the confirmed description + ACs are the source of truth; never invent an external reference.
 - Scope grows mid-planning → stop, propose splitting into smaller features and re-running `/plan` per slice.
 - Architecture references loaded → SPEC.md and PLAN.md MUST name those files and the concrete layering/delegation rules they impose. None available → warning, never silent.

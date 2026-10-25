@@ -10,6 +10,7 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 - `ralph.sh` gate 3 also judges scope (files no task asks for) and standards (`AGENTS.md`/`CLAUDE.md` rules). A `SCOPE` or `STANDARDS` warning shows up in the log and never fails the phase.
 - The `/init:*` interviews give a suggested answer with every question, so you can confirm or correct it.
 - CI job on macOS that runs the checks with `/bin/bash` 3.2.
+- `/retro` reads what the last `ralph.sh` run left in `.phases/` and ranks the changes that would make the next run pass sooner: the phase document, the test command, a check, or a line in `AGENTS.md`. It only proposes; you apply.
 
 ### Fixed
 

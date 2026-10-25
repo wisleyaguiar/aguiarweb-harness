@@ -25,6 +25,7 @@ claude plugin validate . --strict
 - Don't add a root `CLAUDE.md`. Claude Code reads this file directly, and `claude plugin validate --strict` (CI) rejects a `CLAUDE.md` at the plugin root.
 - Change `README.md` and `README.pt-BR.md` together. They mirror each other.
 - `skills/*/SKILL.md` are thin wrappers that read `commands/*.md` and `agents/*.md`. Put behavior in the command or agent, not in the wrapper.
+- The routers (`commands/init.md`, `plan.md`, `ai-context.md`) hold no template or interview content. The agents and `commands/init/*.md` own it.
 - Scripts must run on macOS Bash 3.2: no `declare -A`, `mapfile`, `${var,,}`, or fractional `read -t`. `test-ralph.sh` greps `ralph.sh` and `ralph-watch.sh` for these, and the macOS CI job runs the checks on `/bin/bash`.
 - Commands never write to git. Only `ralph.sh` commits, once per validated phase.
 - Commit messages follow Conventional Commits, for example `fix(ralph): ...` or `chore(release): ...`.
