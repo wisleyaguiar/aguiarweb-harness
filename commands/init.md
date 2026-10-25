@@ -75,7 +75,6 @@ If the Skill invocation fails (tool unavailable or command not found), fall back
 ## Rules
 
 - **Writes nothing itself** — never Write or Edit; this command produces no artifact and changes no file. Authoring happens only inside the invoked `init:*` command.
-- **One hop per run** — invoke at most one `init:*` command; never chain multiple in a single `/init` run. The developer re-runs `/init` to advance.
-- **Never block, never nag** — staleness is a warning, not an error. The developer can always abort the invoked command's interview.
-- **Thin router** — no template or interview content in this file; the `init:*` commands own all of it.
+- **One hop per run** — invoke at most one `init:*` command. The developer re-runs `/init` to advance.
+- **Never block, never nag** — staleness is a warning, not an error.
 - **No git writes** — never stage, commit, or reset.

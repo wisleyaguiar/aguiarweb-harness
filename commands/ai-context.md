@@ -130,7 +130,6 @@ After the table:
 
 ## Rules
 
-- **Thin router** — no artifact template content in this file; writers own the shapes.
 - **Reality only** — `.spec/`, `.specs/`, `spec/` are never read or cited by any step of this pipeline.
 - **Never invent** — applies transitively; agents cite evidence or emit the N/A shape.
 - **Never clobber hand-written files** without `--adopt`.
