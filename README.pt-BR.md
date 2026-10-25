@@ -34,6 +34,8 @@ Três pipelines independentes que se encaixam:
 
 Transversal a tudo: **`/ai-context`** mantém a árvore de contexto (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/agents/*.md`) sincronizada com o código real.
 
+Depois de um run: **`/retro`** lê o que o `ralph.sh` deixou em `.phases/` e ordena as mudanças que fariam o próximo run passar mais cedo.
+
 ## Instalação
 
 ### Claude Code
@@ -77,10 +79,11 @@ O `plugin.json` e o `hooks.json` da raiz são o manifest e os hooks do Antigravi
 | Fases do projeto | `/bc-harness:init:project-phases` | `$bc-harness-init-project-phases` |
 | Planejamento de feature | `/bc-harness:plan` | `$bc-harness-plan` |
 | Contexto dos agentes | `/bc-harness:ai-context` | `$bc-harness-ai-context` |
+| Retrospectiva do run | `/bc-harness:retro` | `$bc-harness-retro` |
 
 As seções de comandos abaixo usam a sintaxe curta do Claude; todos os hosts executam os mesmos arquivos canônicos de workflow.
 
-Os workflows só rodam quando você os chama pelo nome. O Claude Code aplica isso a `/init`, `/plan` e `/ai-context`; o Codex e o Antigravity, a todas as skills. A doc do Antigravity não lista `disable-model-invocation`, mas o Antigravity CLI 1.4.7 respeita o campo; o App e a IDE não foram testados. Em todos os hosts, o `/init` passa sozinho para a próxima etapa do `init`.
+Os workflows só rodam quando você os chama pelo nome. O Claude Code aplica isso a `/init`, `/plan`, `/ai-context` e `/retro`; o Codex e o Antigravity, a todas as skills. A doc do Antigravity não lista `disable-model-invocation`, mas o Antigravity CLI 1.4.7 respeita o campo; o App e a IDE não foram testados. Em todos os hosts, o `/init` passa sozinho para a próxima etapa do `init`.
 
 O `ralph.sh` é um script bash independente — copie ou referencie `scripts/ralph.sh` e rode direto no repositório do projeto-alvo.
 
@@ -171,6 +174,21 @@ Regras centrais:
 - **Contrato de ownership** — todo arquivo gerado carrega banner na linha 3. Arquivo sem banner (escrito à mão) nunca é sobrescrito; `--adopt` incorpora as regras concretas dele à árvore gerada e assume a posse.
 - **Preserva blocos de terceiros** — regiões `<tag>...</tag>` (ex.: Laravel Boost) são re-anexadas verbatim na regeneração.
 - Filtros `+id` / `-id` geram só um subconjunto (ex.: `/ai-context +AGENTS +architecture`).
+
+### `/retro` — retrospectiva do run do ralph
+
+Lê o que o último run do `ralph.sh` deixou no disco — `.phases/state/run.tsv`, os prompts de correção em `.phases/prompts/` (trazem a causa real da falha) e os logs dos gates em `.phases/logs/` — e lista, por gravidade, mudanças no ambiente do agente que fariam o próximo run passar mais cedo:
+
+| Sinal | Mudança proposta |
+|---|---|
+| Fase falhou ou virou commit `wip(phase-N)` | As tasks ainda abertas, no topo da lista |
+| Gate 2 pulado (sem comando de teste) | Definir `test_cmd` no Stack Profile ou passar `--test-cmd` |
+| Uma task segue `INCOMPLETE` entre ciclos | Dividir a fase ou deixar a task mais precisa |
+| `STANDARDS: WARN` | Regra de lint, hook ou teste para regra mecânica; uma linha no `AGENTS.md` para questão de julgamento |
+| `SCOPE: WARN` | Task faltando ou escrita de forma vaga |
+| A sessão procurou nos arquivos errados | Um ponteiro de navegação no `AGENTS.md`, ou rodar `/ai-context` de novo |
+
+Só leitura: ele propõe, você aplica. Cobre só o último run, porque o `ralph.sh` apaga `.phases/` no início de cada run.
 
 ## Perfis de stack
 
@@ -353,9 +371,10 @@ commands/
                                database-schema, project-phases
   plan.md                      /plan (roteador do pipeline de planejamento)
   ai-context.md                /ai-context (roteador da árvore de contexto)
+  retro.md                     /retro (retrospectiva do run do ralph)
 agents/                        specifier, clarifier, planner,
                                ai-context-{inspector,core,docs}
-skills/                        adaptadores Codex/Antigravity dos 7 fluxos públicos
+skills/                        adaptadores Codex/Antigravity dos 8 fluxos públicos
 profiles/                      perfis de stack lidos pelos comandos init:*
                                (laravel, wordpress, generic)
 scripts/

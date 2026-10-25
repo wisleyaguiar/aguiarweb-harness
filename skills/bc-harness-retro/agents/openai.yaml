@@ -1,0 +1,6 @@
+interface:
+  display_name: "Harness Retro"
+  short_description: "Review the last ralph.sh run and rank fixes."
+  default_prompt: "Use $bc-harness-retro to review the last ralph.sh run in this repository."
+policy:
+  allow_implicit_invocation: false

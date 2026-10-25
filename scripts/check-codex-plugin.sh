@@ -55,6 +55,7 @@ expected = {
     "bc-harness-init-project-phases",
     "bc-harness-init-user-stories",
     "bc-harness-plan",
+    "bc-harness-retro",
 }
 skills_root = root / "skills"
 actual = {path.name for path in skills_root.iterdir() if path.is_dir()}
@@ -89,7 +90,7 @@ for prompt in interface["defaultPrompt"]:
 def command_frontmatter(relative):
     return (root / relative).read_text(encoding="utf-8").split("\n---\n", 1)[0]
 
-for name in ("init", "plan", "ai-context"):
+for name in ("init", "plan", "ai-context", "retro"):
     assert re.search(r"^disable-model-invocation:\s*true$", command_frontmatter(f"commands/{name}.md"), re.MULTILINE), (
         f"commands/{name}.md must be user-invoked"
     )

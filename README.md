@@ -36,6 +36,8 @@ Three independent pipelines that fit together:
 
 Cross-cutting: **`/ai-context`** keeps the context tree (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/agents/*.md`) in sync with the real code.
 
+After a run: **`/retro`** reads what `ralph.sh` left in `.phases/` and ranks the changes that would make the next run pass sooner.
+
 ## Installation
 
 ### Claude Code
@@ -79,10 +81,11 @@ The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; 
 | Project phases | `/bc-harness:init:project-phases` | `$bc-harness-init-project-phases` |
 | Feature planning | `/bc-harness:plan` | `$bc-harness-plan` |
 | Agent context | `/bc-harness:ai-context` | `$bc-harness-ai-context` |
+| Run retrospective | `/bc-harness:retro` | `$bc-harness-retro` |
 
 The command sections below use the shorter Claude syntax; all hosts execute the same canonical workflow files.
 
-The workflows run only when you call them by name. Claude Code applies this to `/init`, `/plan`, and `/ai-context`; Codex and Antigravity apply it to every skill. The Antigravity docs don't list `disable-model-invocation`, but Antigravity CLI 1.4.7 honors it; the App and IDE are untested. On every host, `/init` hands off to the next `init` step itself.
+The workflows run only when you call them by name. Claude Code applies this to `/init`, `/plan`, `/ai-context`, and `/retro`; Codex and Antigravity apply it to every skill. The Antigravity docs don't list `disable-model-invocation`, but Antigravity CLI 1.4.7 honors it; the App and IDE are untested. On every host, `/init` hands off to the next `init` step itself.
 
 `ralph.sh` is a standalone bash script — copy or reference `scripts/ralph.sh` and run it directly in the target project's repository.
 
@@ -173,6 +176,21 @@ Core rules:
 - **Ownership contract** — every generated file carries a banner on line 3. A file without the banner (hand-written) is never clobbered; `--adopt` folds its concrete rules into the generated tree and takes ownership.
 - **Preserves third-party blocks** — `<tag>...</tag>` regions (e.g. Laravel Boost) are re-appended verbatim on regeneration.
 - `+id` / `-id` filters generate only a subset (e.g. `/ai-context +AGENTS +architecture`).
+
+### `/retro` — ralph run retrospective
+
+Reads what the last `ralph.sh` run left on disk — `.phases/state/run.tsv`, the fix prompts in `.phases/prompts/` (they carry the real failure cause), and the gate logs in `.phases/logs/` — and lists, by severity, changes to the agent's environment that would make the next run pass sooner:
+
+| Signal | Proposed change |
+|---|---|
+| Phase failed or committed as `wip(phase-N)` | The tasks still open, first in the list |
+| Gate 2 skipped (no test command) | Set `test_cmd` in the Stack Profile or pass `--test-cmd` |
+| A task stays `INCOMPLETE` across cycles | Split the phase or sharpen the task |
+| `STANDARDS: WARN` | A lint rule, hook, or test for a mechanical rule; one line in `AGENTS.md` for a judgement call |
+| `SCOPE: WARN` | A missing or loosely worded task |
+| The session looked in the wrong files | A navigation pointer in `AGENTS.md`, or re-run `/ai-context` |
+
+Read-only: it proposes, you apply. It covers the last run only, because `ralph.sh` deletes `.phases/` at the start of each run.
 
 ## Stack profiles
 
@@ -357,9 +375,10 @@ commands/
                                database-schema, project-phases
   plan.md                      /plan (planning pipeline router)
   ai-context.md                /ai-context (context tree router)
+  retro.md                     /retro (ralph run retrospective)
 agents/                        specifier, clarifier, planner,
                                ai-context-{inspector,core,docs}
-skills/                        Codex/Antigravity adapters for the 7 public workflows
+skills/                        Codex/Antigravity adapters for the 8 public workflows
 profiles/                      stack profiles read by the init:* commands
                                (laravel, wordpress, generic)
 scripts/
