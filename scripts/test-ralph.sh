@@ -2,8 +2,9 @@
 #
 # test-ralph.sh — suite red/green do scripts/ralph.sh com engine mock.
 #
-# Nenhuma chamada de rede, nenhum token gasto: binarios fake `claude` e `codex`
-# entram no PATH e o comportamento e escolhido por MOCK_SCENARIO.
+# Nenhuma chamada de rede, nenhum token gasto: binarios fake `claude`, `codex`,
+# `agy` e `curl` entram no PATH e o comportamento e escolhido por MOCK_SCENARIO
+# (engine), MOCK_ROUTE (decisor da rota no claude) e MOCK_API (API de decisao).
 #
 # Uso: scripts/test-ralph.sh [nome-do-caso]   (exit 0 = tudo verde)
 
@@ -67,17 +68,25 @@ bump() {
 }
 
 model=""
+effort=""
 outfmt=""
+schema=""
+route=0
+stdin_txt=""
 
 if [ "$name" = "claude" ]; then
+  # --json-schema = chamada do decisor da rota: -p sem argumento, prompt no stdin.
+  for a in "$@"; do [ "$a" = "--json-schema" ] && route=1; done
   # claude -p real le stdin quando nao e TTY: se o ralph nao redirecionar
   # < /dev/null, o mock engole o stream de quem chamou (ex: manifest do loop).
-  [ -t 0 ] || cat > /dev/null
+  [ -t 0 ] || stdin_txt=$(cat)
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -p) prompt="$2"; shift 2 ;;
-      --allowedTools) verify=1; shift 2 ;;
+      -p) if [ "$route" -eq 1 ]; then shift; else prompt="$2"; shift 2; fi ;;
+      --allowedTools) [ "$route" -eq 1 ] || verify=1; shift 2 ;;
       --model) model="$2"; shift 2 ;;
+      --effort) effort="$2"; shift 2 ;;
+      --json-schema) schema="$2"; shift 2 ;;
       --output-format) outfmt="$2"; shift 2 ;;
       *) shift ;;
     esac
@@ -104,6 +113,26 @@ else
     esac
   done
   prompt=$(cat)
+fi
+
+# --- decisor da rota (--route auto) ------------------------------------------
+# Responde uma chave por fase pedida no schema: p1 opus-high, as outras
+# haiku-low. MOCK_ROUTE=bad devolve resultado sem structured_output (recusa).
+if [ "$route" -eq 1 ]; then
+  bump route_calls > /dev/null
+  echo "$model|$effort" > "$state/route_model"
+  printf '%s' "$stdin_txt" > "$state/route_prompt"
+  if [ "${MOCK_ROUTE:-ok}" = "bad" ]; then
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"nao sei"}'
+    exit 0
+  fi
+  out=""
+  for k in $(grep -o '"p[0-9]*":{' <<< "$schema" | tr -d '":{'); do
+    v="haiku-low"; [ "$k" = "p1" ] && v="opus-high"
+    out+="${out:+,}\"$k\":\"$v\""
+  done
+  echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"ok\",\"structured_output\":{$out}}"
+  exit 0
 fi
 
 grep -q '^RALPH_VERIFY' <<< "$prompt" && verify=1
@@ -166,6 +195,10 @@ fi
 
 # --- sessao de implementacao -------------------------------------------------
 n=$(bump impl_calls)
+# Modelo/esforco de cada sessao de implementacao, na ordem ("-" = nao passou).
+[ "$name" = "claude" ] && echo "${model:--}/${effort:--}" >> "$state/impl_routes"
+# A chave da API de decisao nao pode chegar a sessao do agente.
+echo "${RALPH_ROUTE_KEY:-unset}" > "$state/impl_env_key"
 
 emit_claude_ok()    { echo '{"type":"result","subtype":"success","is_error":false,"result":"implementado"}'; }
 emit_claude_limit() { echo "{\"type\":\"result\",\"subtype\":\"error\",\"is_error\":true,\"result\":\"Claude AI usage limit reached|$1\"}"; }
@@ -268,6 +301,41 @@ MOCK
   cp "$bin/mock-engine" "$bin/claude"
   cp "$bin/mock-engine" "$bin/codex"
   cp "$bin/mock-engine" "$bin/agy"
+
+  # API de decisao (RALPH_ROUTE_API): grava o pedido e responde por MOCK_API.
+  cat > "$bin/curl" <<'CURL'
+#!/usr/bin/env bash
+state="${MOCK_STATE:?}"
+out="" data="" url="" cfg=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -K) [ "$2" = "-" ] && cfg=$(cat); shift 2 ;;
+    -o) out="$2"; shift 2 ;;
+    -w|-H|--max-time) shift 2 ;;
+    --data-binary) data="${2#@}"; shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+f="$state/curl_calls"; n=0
+[ -f "$f" ] && n=$(cat "$f")
+n=$((n + 1)); echo "$n" > "$f"
+grep -q 'Bearer test-key-123' <<< "$cfg" && echo ok > "$state/curl_auth"
+cp "$data" "$state/curl_body_$n"
+echo "$url" > "$state/curl_url"
+case "${MOCK_API:-ok}" in
+  401)     echo '{"error":"bad key"}' > "$out"; printf '401'; exit 0 ;;
+  402)     echo '{"error":{"code":402,"message":"Insufficient credits"}}' > "$out"; printf '402'; exit 0 ;;
+  timeout) printf '000'; exit 28 ;;
+  lowconf) body='{"answers":[{"type":"choice","name":"route","choice":"sonnet-high","confidence":0.31}]}' ;;
+  refusal) body='{"answers":[{"type":"refusal","name":"route"}]}' ;;
+  jev)     body='{"answers":{"route":{"choice":"opus-high","confidence":0.8}}}' ;;
+  *)       body='{"answers":[{"type":"choice","name":"route","choice":"sonnet-high","probabilities":[{"value":"sonnet-high","probability":0.9}],"confidence":0.91}]}' ;;
+esac
+printf '%s\n' "$body" > "$out"
+printf '200'
+CURL
+  chmod +x "$bin/curl"
 }
 
 make_testcmd() {
@@ -414,6 +482,15 @@ run_ralph() {
     RALPH_LIMIT_BUFFER=1 \
     RALPH_VERIFY="${CASE_VERIFY:-}" \
     RALPH_VERIFY_MODEL="${CASE_VERIFY_MODEL:-}" \
+    RALPH_MODEL="${CASE_MODEL:-}" \
+    RALPH_EFFORT="${CASE_EFFORT:-}" \
+    RALPH_ROUTE="${CASE_ROUTE:-}" \
+    RALPH_ROUTE_API="${CASE_ROUTE_API:-}" \
+    RALPH_ROUTE_KEY="${CASE_ROUTE_KEY:-}" \
+    RALPH_ROUTE_URL="${CASE_ROUTE_URL:-}" \
+    RALPH_ROUTE_MODEL="" \
+    MOCK_ROUTE="${CASE_MOCK_ROUTE:-ok}" \
+    MOCK_API="${CASE_MOCK_API:-ok}" \
       bash "$RALPH" "$@" > "$dir/out.log" 2>&1
   ) || rc=$?
   echo "$rc"
@@ -1567,6 +1644,276 @@ if case_enabled retro-sources; then
   (cd "$d/repo" && bash -c "$retro_block") > "$d/retro.txt" 2>&1
   assert_contains "$d/retro.txt" "phase-01.verify-1.log: SCOPE: WARN" "acha o aviso de escopo"
   assert_not_contains "$d/retro.txt" "STANDARDS" "ultimo eco vence: STANDARDS revisado para OK"
+fi
+
+# ---------------------------------------------------------------------------
+# Rota por fase (so engine claude): modelo e esforco por flag, dica no plano,
+# escalada no ciclo de correcao, decisao --route auto pela engine ou por API.
+# ---------------------------------------------------------------------------
+
+# add_route_hint <repo> <fase> <valor> — `**Route:** <valor>` no preambulo da fase.
+add_route_hint() {
+  local f="$1/.spec/init/project-phases.md"
+  awk -v ph="## Phase $2:" -v v="$3" '{ print } index($0, ph) == 1 { print ""; print "**Route:** " v }' "$f" > "$f.tmp" \
+    && mv "$f.tmp" "$f"
+  git -C "$1" add -A && git -C "$1" commit -q -m "chore: route hint"
+}
+
+# route_line <dir> <fase> -> "modelo esforco origem" do registro ROUTE do run.tsv
+route_line() { awk -F'\t' -v n="$2" '$1 == "ROUTE" && $2 == n { print $3, $4, $5 }' "$1/repo/.phases/state/run.tsv"; }
+
+# ---------------------------------------------------------------------------
+# 44. --model/--effort chegam a implementacao; o verificador fica no dele;
+#     flag vence env.
+# ---------------------------------------------------------------------------
+if case_enabled route-flags; then
+  header "44. --model/--effort na implementacao, nao no verificador"
+  d=$(new_case route-flags)
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --model opus --effort high)
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq "opus/high" "$(sed -n 1p "$d/state/impl_routes")" "fase 1 roda com opus/high"
+  assert_eq "opus/high" "$(sed -n 2p "$d/state/impl_routes")" "fase 2 roda com opus/high"
+  assert_eq "sonnet" "$(cat "$d/state/verify_model" 2>/dev/null)" "verificador continua no sonnet"
+  assert_eq "opus high flag" "$(route_line "$d" 1)" "ROUTE no run.tsv com origem flag"
+  assert_contains "$d/out.log" "Modelo: opus, esforco: high (flag)" "log informa a rota"
+
+  d=$(new_case route-flags-env)
+  rc=$(CASE_MODEL=haiku CASE_EFFORT=low run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --model sonnet)
+  assert_eq 0 "$rc" "exit 0 (env)"
+  assert_eq "sonnet/low" "$(sed -n 1p "$d/state/impl_routes")" "flag vence RALPH_MODEL; RALPH_EFFORT vale sem flag"
+
+  # so o modelo: o esforco vazio vira "-" no run.tsv (tab seguido colapsaria)
+  d=$(new_case route-flags-model)
+  run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --model opus > /dev/null
+  assert_eq "opus/-" "$(sed -n 1p "$d/state/impl_routes")" "so --model: sem --effort"
+  assert_eq "opus - flag" "$(route_line "$d" 1)" "esforco vazio vira '-' no ROUTE"
+  RALPH_WATCH_COLS=120 "$ROOT/scripts/ralph-watch.sh" --once --no-color "$d/repo" > "$d/panel.txt" 2>&1
+  assert_contains "$d/panel.txt" "opus/–" "painel mostra o esforco default como –"
+
+  d=$(new_case route-flags-none)
+  run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" > /dev/null
+  assert_eq "-/-" "$(sed -n 1p "$d/state/impl_routes")" "sem rota: nada de --model/--effort"
+  assert_not_contains "$d/repo/.phases/state/run.tsv" "ROUTE" "sem rota: nenhum registro ROUTE"
+fi
+
+# ---------------------------------------------------------------------------
+# 45. Rota e so do claude; valores invalidos param no preflight.
+# ---------------------------------------------------------------------------
+if case_enabled route-preflight; then
+  header "45. rota so no claude; valores invalidos param no preflight"
+  d=$(new_case route-codex)
+  rc=$(run_ralph "$d" ok --engine codex --test-cmd "$d/test.sh" --model gpt-x)
+  assert_eq 1 "$rc" "codex com --model -> exit 1"
+  assert_contains "$d/out.log" "so do engine claude" "mensagem clara"
+  assert_eq "" "$(cat "$d/state/impl_calls" 2>/dev/null)" "nenhuma sessao iniciada"
+
+  d=$(new_case route-agy-env)
+  rc=$(CASE_ROUTE=auto run_ralph "$d" ok --engine agy --test-cmd "$d/test.sh")
+  assert_eq 1 "$rc" "agy com RALPH_ROUTE=auto -> exit 1"
+
+  d=$(new_case route-bad-effort)
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --effort turbo)
+  assert_eq 1 "$rc" "--effort turbo -> exit 1"
+  assert_contains "$d/out.log" "Valor invalido para --effort" "aponta o esforco invalido"
+
+  d=$(new_case route-bad-mode)
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route sempre)
+  assert_eq 1 "$rc" "--route sempre -> exit 1"
+
+  d=$(new_case route-api-nokey)
+  rc=$(CASE_ROUTE_API=openai run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 1 "$rc" "API sem RALPH_ROUTE_KEY -> exit 1"
+  assert_contains "$d/out.log" "RALPH_ROUTE_KEY" "pede a chave"
+
+  d=$(new_case route-api-badkey)
+  rc=$(CASE_ROUTE_API=openai CASE_ROUTE_KEY='abc"def' run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 1 "$rc" "chave com aspas -> exit 1"
+  assert_contains "$d/out.log" "caractere invalido" "aponta a chave invalida"
+
+  d=$(new_case route-api-http)
+  rc=$(CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 CASE_ROUTE_URL=http://example.com \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 1 "$rc" "URL sem https -> exit 1"
+
+  d=$(new_case route-api-off)
+  rc=$(CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh")
+  assert_eq 0 "$rc" "RALPH_ROUTE_API com --route off -> segue"
+  assert_contains "$d/out.log" "RALPH_ROUTE_API ignorado" "avisa que a API ficou de fora"
+  assert_eq "" "$(cat "$d/state/curl_calls" 2>/dev/null)" "nenhuma chamada a API"
+fi
+
+# ---------------------------------------------------------------------------
+# 46. Dica **Route:** do plano; o ciclo de correcao sobe um degrau; flag fica.
+# ---------------------------------------------------------------------------
+if case_enabled route-plan; then
+  header "46. dica do plano e escalada no ciclo de correcao"
+  d=$(new_case route-plan)
+  add_route_hint "$d/repo" 1 "sonnet/medium"
+  rc=$(run_ralph "$d" test-red-once --engine claude --test-cmd "$d/test.sh" --max-cycles 2)
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq "sonnet/medium" "$(sed -n 1p "$d/state/impl_routes")" "ciclo 1 usa a dica do plano"
+  assert_eq "opus/high" "$(sed -n 2p "$d/state/impl_routes")" "ciclo 2 sobe um degrau"
+  assert_eq "-/-" "$(sed -n 3p "$d/state/impl_routes")" "fase sem dica segue no default"
+  assert_eq "opus high ciclo" "$(route_line "$d" 1)" "ROUTE marca a escalada"
+  assert_eq "sonnet" "$(cat "$d/state/verify_model" 2>/dev/null)" "verificador nao escala"
+
+  RALPH_WATCH_COLS=120 "$ROOT/scripts/ralph-watch.sh" --once --no-color "$d/repo" > "$d/panel.txt" 2>&1
+  assert_contains "$d/panel.txt" "Modelo" "painel ganha a coluna Modelo"
+  assert_contains "$d/panel.txt" "opus/high ↑" "painel mostra a escalada"
+  RALPH_WATCH_COLS=80 "$ROOT/scripts/ralph-watch.sh" --once --no-color "$d/repo" > "$d/narrow.txt" 2>&1
+  assert_not_contains "$d/narrow.txt" "Modelo" "terminal estreito esconde a coluna em vez de estourar"
+  assert_eq "$(grep -F 'Foundation' "$d/panel.txt" | grep -o '│' | wc -l | tr -d ' ')" \
+    "$(grep -F 'cria o arquivo A' "$d/panel.txt" | grep -o '│' | wc -l | tr -d ' ')" \
+    "linha de task tem as mesmas colunas da fase"
+  assert_eq "$(grep -F 'Fase / Task' "$d/panel.txt" | grep -o '│' | wc -l | tr -d ' ')" \
+    "$(grep -F 'Foundation' "$d/panel.txt" | grep -o '│' | wc -l | tr -d ' ')" \
+    "cabecalho tem as mesmas colunas da linha"
+
+  d=$(new_case route-plan-pinned)
+  add_route_hint "$d/repo" 1 "sonnet/medium"
+  run_ralph "$d" test-red-once --engine claude --test-cmd "$d/test.sh" --max-cycles 2 --effort low > /dev/null
+  assert_eq "sonnet/low" "$(sed -n 1p "$d/state/impl_routes")" "flag de esforco vence a dica"
+  assert_eq "opus/low" "$(sed -n 2p "$d/state/impl_routes")" "ciclo 2 sobe o modelo, nao o esforco da flag"
+
+  d=$(new_case route-plan-bad)
+  add_route_hint "$d/repo" 1 "gpt/turbo"
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh")
+  assert_eq 0 "$rc" "dica invalida nao para o run"
+  assert_contains "$d/out.log" "modelo 'gpt' do **Route:** ignorado" "avisa a dica invalida"
+  assert_eq "-/-" "$(sed -n 1p "$d/state/impl_routes")" "dica invalida e ignorada"
+
+  d=$(new_case route-plan-codex)
+  add_route_hint "$d/repo" 1 "opus/high"
+  rc=$(run_ralph "$d" ok --engine codex --test-cmd "$d/test.sh")
+  assert_eq 0 "$rc" "codex com dica no plano segue"
+  assert_contains "$d/out.log" "Dicas **Route:** do plano ignoradas" "avisa que a dica e so do claude"
+fi
+
+# ---------------------------------------------------------------------------
+# 47. --route auto sem API: a engine decide todas as fases numa chamada so.
+# ---------------------------------------------------------------------------
+if case_enabled route-auto; then
+  header "47. --route auto: decisao em lote pela engine"
+  d=$(new_case route-auto)
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq 1 "$(cat "$d/state/route_calls" 2>/dev/null)" "uma chamada de decisao para todas as fases"
+  assert_eq "haiku|low" "$(cat "$d/state/route_model" 2>/dev/null)" "decisor barato: haiku, esforco low"
+  assert_contains "$d/state/route_prompt" "### p2 — Feature" "prompt chega pelo stdin com as fases"
+  assert_eq "opus/high" "$(sed -n 1p "$d/state/impl_routes")" "fase 1 com a escolha da engine"
+  assert_eq "haiku/low" "$(sed -n 2p "$d/state/impl_routes")" "fase 2 com a escolha da engine"
+  assert_eq "haiku low engine" "$(route_line "$d" 2)" "ROUTE com origem engine"
+
+  # Mesmo documento com a fase 2 pendente: o re-run LE a decisao gravada em vez
+  # de pagar outra. A fase 2 tem que ficar pendente, senao o re-run pula tudo
+  # e o teste passaria sem o routing.tsv ser lido.
+  d=$(new_case route-auto-resume)
+  printf '%s\n' '#!/usr/bin/env bash' '[ -t 0 ] || cat > /dev/null' \
+    'if [ -f src/impl-2.txt ]; then echo "fase 2 vermelha"; exit 1; fi' 'echo "all green"' > "$d/test-p2-red.sh"
+  chmod +x "$d/test-p2-red.sh"
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test-p2-red.sh" --route auto --max-cycles 1)
+  assert_eq 1 "$rc" "run 1 para na fase 2"
+  # descarta o trabalho parcial da fase 2; .phases/ fica (esta no info/exclude)
+  git -C "$d/repo" clean -fdq
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 0 "$rc" "run 2 termina"
+  assert_eq 1 "$(cat "$d/state/route_calls" 2>/dev/null)" "run 2 nao decide de novo"
+  assert_eq "haiku/low" "$(tail -n 1 "$d/state/impl_routes")" "fase 2 retoma com a rota gravada"
+
+  d=$(new_case route-auto-hint)
+  add_route_hint "$d/repo" 1 "sonnet/medium"
+  run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_not_contains "$d/state/route_prompt" "### p1" "fase com dica nao vai ao decisor"
+  assert_eq "sonnet/medium" "$(sed -n 1p "$d/state/impl_routes")" "dica do plano vence o --route auto"
+
+  # dica parcial: vai ao decisor, que preenche so o que falta (campo a campo)
+  d=$(new_case route-auto-partial)
+  add_route_hint "$d/repo" 1 "sonnet"
+  run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_contains "$d/state/route_prompt" "### p1" "fase com dica parcial vai ao decisor"
+  assert_eq "sonnet/high" "$(sed -n 1p "$d/state/impl_routes")" "modelo da dica, esforco da decisao"
+
+  d=$(new_case route-auto-bad)
+  rc=$(CASE_MOCK_ROUTE=bad run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 0 "$rc" "decisao sem structured_output nao para o run"
+  assert_contains "$d/out.log" "sem decisao valida" "avisa a falha"
+  assert_eq "-/-" "$(sed -n 1p "$d/state/impl_routes")" "fase cai no default"
+fi
+
+# ---------------------------------------------------------------------------
+# 48. --route auto com RALPH_ROUTE_API: a API decide; falha cai na engine.
+# ---------------------------------------------------------------------------
+if case_enabled route-api; then
+  header "48. --route auto com API de decisao (OpenAI/Jev)"
+  d=$(new_case route-api)
+  rc=$(CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq 2 "$(cat "$d/state/curl_calls" 2>/dev/null)" "uma chamada por fase"
+  assert_eq "" "$(cat "$d/state/route_calls" 2>/dev/null)" "engine nao decide quando a API responde"
+  assert_eq "sonnet/high" "$(sed -n 1p "$d/state/impl_routes")" "fase usa a escolha da API"
+  assert_eq "sonnet high openai" "$(route_line "$d" 1)" "ROUTE com origem openai"
+  assert_eq "ok" "$(cat "$d/state/curl_auth" 2>/dev/null)" "chave vai no header pelo stdin"
+  assert_eq "https://api.openai.com/v1/decisions" "$(cat "$d/state/curl_url")" "URL padrao da OpenAI"
+  assert_contains "$d/state/curl_body_1" '"questions":[{"type":"choice","name":"route"' "corpo no formato da Decisions API"
+  assert_contains "$d/state/curl_body_1" "cria o arquivo A" "manda o titulo das tasks"
+  assert_not_contains "$d/state/curl_body_1" "o arquivo existe" "nunca o corpo das tasks"
+  if grep -rqF "test-key-123" "$d/repo/.phases" 2>/dev/null; then bad "chave vazou para .phases/"; else ok "chave nao aparece em .phases/"; fi
+  assert_eq "unset" "$(cat "$d/state/impl_env_key" 2>/dev/null)" "chave nao chega ao ambiente da sessao"
+
+  d=$(new_case route-api-lowconf)
+  CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=lowconf \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_contains "$d/out.log" "confianca 0.31 (< 0.5)" "confianca baixa e recusada"
+  assert_eq 1 "$(cat "$d/state/route_calls" 2>/dev/null)" "engine decide as fases que sobraram"
+  assert_eq "opus high engine*" "$(route_line "$d" 1)" "origem engine* quando a API falhou"
+
+  d=$(new_case route-api-401)
+  CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=401 \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_eq 1 "$(cat "$d/state/curl_calls" 2>/dev/null)" "401 desliga a API no resto do run"
+  assert_contains "$d/out.log" "recusou o pedido (HTTP 401" "avisa a chave recusada"
+  assert_eq "haiku/low" "$(sed -n 2p "$d/state/impl_routes")" "engine decide no lugar"
+
+  # 402 = sem credito na OpenRouter: tambem desliga a API em vez de tentar fase a fase
+  d=$(new_case route-api-402)
+  CASE_ROUTE_API=jev CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=402 \
+    CASE_ROUTE_URL=https://openrouter.ai/api/v1/systemone \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_eq 1 "$(cat "$d/state/curl_calls" 2>/dev/null)" "402 desliga a API no resto do run"
+  assert_eq "https://openrouter.ai/api/v1/systemone" "$(cat "$d/state/curl_url")" "RALPH_ROUTE_URL troca o endpoint"
+  assert_contains "$d/out.log" "HTTP 402" "avisa a falta de credito"
+
+  d=$(new_case route-api-refusal)
+  rc=$(CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=refusal \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  assert_eq 0 "$rc" "refusal nao para o run"
+  assert_contains "$d/out.log" "nao deu uma opcao valida" "refusal cai na engine"
+
+  d=$(new_case route-api-timeout)
+  CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=timeout \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_contains "$d/out.log" "nao respondeu (HTTP 000)" "timeout cai na engine"
+
+  d=$(new_case route-api-jev)
+  CASE_ROUTE_API=jev CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=jev \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_eq "https://api.typesafe.ai/v1/systemone" "$(cat "$d/state/curl_url")" "URL padrao do Jev"
+  assert_contains "$d/state/curl_body_1" '"criteria":{"haiku-low"' "corpo no formato do Jev"
+  assert_eq "opus/high" "$(sed -n 1p "$d/state/impl_routes")" "fase usa a escolha do Jev"
+fi
+
+# ---------------------------------------------------------------------------
+# 49. json_escape: aspas, barra invertida e quebra de linha viram JSON valido.
+# ---------------------------------------------------------------------------
+if case_enabled route-json-escape; then
+  header "49. json_escape e ladder_up no Bash do sistema"
+  # O texto vai por variavel: source repassa os argumentos ao parser do ralph.
+  out=$(RALPH_LIB_ONLY=1 ESC_IN='a "b" c\d'$'\n''e' bash -c 'source "$1" 2>/dev/null; json_escape "$ESC_IN"' _ "$RALPH")
+  assert_eq 'a \"b\" c\\d e' "$out" "escapa aspas e barra, achata a quebra de linha"
+  out=$(RALPH_LIB_ONLY=1 bash -c 'source "$1" 2>/dev/null
+    printf "%s %s %s %s" "$(ladder_up haiku "$MODELS" 1)" "$(ladder_up sonnet "$MODELS" 5)" \
+      "$(ladder_up claude-opus-5-5 "$MODELS" 1)" "$(ladder_up high "$EFFORTS" 2)"' _ "$RALPH")
+  assert_eq "sonnet opus claude-opus-5-5 max" "$out" "escada sobe, para no topo, id completo nao muda"
 fi
 
 # ---------------------------------------------------------------------------

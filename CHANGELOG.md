@@ -4,6 +4,19 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-28
+
+### Added
+
+- `ralph.sh` picks the model and effort of each phase on the claude engine: `--model`, `--effort` (or `RALPH_MODEL`, `RALPH_EFFORT`), or a `**Route:** sonnet/high` line in the phase preamble. From cycle 2 on, each fix cycle steps up one level, except what came from a flag. Codex and Antigravity keep the plain loop.
+- `ralph.sh --route auto` decides model and effort for phases with no flag and no complete hint, before the run: one cheap claude call for all phases, or the OpenAI Decisions API or Jev (from TypeSafe or OpenRouter) with `RALPH_ROUTE_API`, `RALPH_ROUTE_KEY`, and `RALPH_ROUTE_URL`. Only phase and task titles go to the API. A failed decision falls back to claude, then to the engine default, and never stops the run.
+- `/plan` and `/init:project-phases` write the `**Route:**` line from the phase's riskiest task.
+- `ralph-watch.sh` shows a **Modelo** column when the run has a route, with `↑` on a stepped-up phase. `/retro` flags phases that only passed after a step-up.
+
+### Changed
+
+- `ralph.sh --help` prints the whole header, including the environment variables.
+
 ## [0.6.0] - 2026-10-24
 
 ### Added

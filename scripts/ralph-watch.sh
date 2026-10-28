@@ -41,6 +41,7 @@
 #     META<TAB>chave<TAB>valor
 #     PHASE<TAB>num<TAB>status<TAB>tentativa<TAB>"g0 g1 g2 g3"<TAB>titulo
 #     TASK<TAB>fase<TAB>indice<TAB>status<TAB>titulo
+#     ROUTE<TAB>fase<TAB>modelo<TAB>esforco<TAB>origem   (so engine claude; "-" = default)
 #
 #   .phases/state/live.tsv     escritor: watcher do stream da sessao corrente
 #     PHASE<TAB>num
@@ -109,14 +110,16 @@ fi
 # variavel por chave (META_status, META_pid...).
 # shortcut: a task usa o indice fase*1000+task, que colide com 1000+ tasks numa
 # fase; trocar por arrays paralelos se um plano chegar perto disso.
-declare -a PH_STATUS PH_ATTEMPT PH_GATES PH_TITLE
+declare -a PH_STATUS PH_ATTEMPT PH_GATES PH_TITLE PH_ROUTE
 declare -a TK_STATUS TK_TITLE TK_COUNT
 declare -a PHASE_NUMS
 LIVE_PHASE=""
+HAS_ROUTE=0
 
 reset_state() {
   unset "${!META_@}"
-  PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=(); PH_TITLE=()
+  PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=(); PH_TITLE=(); PH_ROUTE=()
+  HAS_ROUTE=0
   TK_STATUS=(); TK_TITLE=(); TK_COUNT=()
   PHASE_NUMS=()
   LIVE_PHASE=""
@@ -153,6 +156,15 @@ read_state() {
         uint_v a "$a" && uint_v b "$b" || continue
         TK_STATUS[$a*1000+$b]="$c"; TK_TITLE[$a*1000+$b]="$d"
         TK_COUNT[$a]="$b"
+        ;;
+      ROUTE)
+        uint_v a "$a" || continue
+        [ "$b" = "-" ] && b="–"
+        [ "$c" = "-" ] && c="–"
+        PH_ROUTE[$a]="$b/$c"
+        # ciclo = subiu um degrau no ciclo de correcao
+        [ "$d" = "ciclo" ] && PH_ROUTE[$a]+=" ↑"
+        HAS_ROUTE=1
         ;;
     esac
   done < "$RUN_STATE"
@@ -567,17 +579,31 @@ build_rows() {
   # mais longo ("▶ Em execução"). Encolher qualquer um deles corta a informacao.
   COL_ID=4; COL_STATUS=14; COL_TRY=9; COL_GATES=19
   COL_NAME=$(( W - COL_ID - COL_STATUS - COL_TRY - COL_GATES - 16 ))
+  # Coluna Modelo so quando o run tem rota (engine claude com modelo/esforco) e
+  # cabe sem espremer o titulo abaixo do minimo: em terminal estreito ela some
+  # em vez de estourar a largura. Cabe "sonnet/medium ↑"; custa a largura + " │ ".
+  COL_MODEL=0
+  if [ "$HAS_ROUTE" -eq 1 ] && [ $(( COL_NAME - 18 )) -ge 16 ]; then
+    COL_MODEL=15
+    COL_NAME=$(( COL_NAME - COL_MODEL - 3 ))
+  fi
   [ "$COL_NAME" -lt 16 ] && COL_NAME=16
 
   local V="${C_CYAN}│${C_RESET}"
 
   # Os tracinhos de tentativa e gates das linhas de task nao dependem da fase:
   # padeia uma vez por frame em vez de uma vez por linha.
-  local dash_try dash_gates c_try_tk c_gates_tk
+  local dash_try dash_gates c_try_tk c_gates_tk dash_model x_model_tk="" x_model
   pad_v dash_try   '–' "$COL_TRY"
   pad_v dash_gates '–' "$COL_GATES"
   cell_v c_try_tk   "${C_GREY}${dash_try}${C_RESET}"   "$dash_try"   "$COL_TRY"
   cell_v c_gates_tk "${C_GREY}${dash_gates}${C_RESET}" "$dash_gates" "$COL_GATES"
+  # A coluna Modelo entra como prefixo da celula de tentativa: vazio sem rota,
+  # e o layout de antes fica byte a byte igual.
+  if [ "$COL_MODEL" -gt 0 ]; then
+    pad_v dash_model '–' "$COL_MODEL"
+    x_model_tk="${C_GREY}${dash_model}${C_RESET} $V "
+  fi
 
   local num i st tries row
   local t_name c_name c_id c_st c_try g_col g_pln c_gates lbl pln
@@ -594,13 +620,18 @@ build_rows() {
     cell_v c_st "$lbl" "$pln" "$COL_STATUS"
     pad_v c_id "F$num" "$COL_ID"
     pad_v c_try "$tries" "$COL_TRY"
+    x_model=""
+    if [ "$COL_MODEL" -gt 0 ]; then
+      pad_v x_model "${PH_ROUTE[$num]:-–}" "$COL_MODEL"
+      x_model="$x_model $V "
+    fi
     gates_cell_v g_col "${PH_GATES[$num]}" 1
     gates_cell_v g_pln "${PH_GATES[$num]}" 0
     cell_v c_gates "$g_col" "$g_pln" "$COL_GATES"
 
     # a linha guarda tudo menos a borda direita: ali vai a barra de rolagem
     printf -v row '%s %s %s %s %s %s %s %s %s %s' "$V" \
-      "$c_id" "$V" "$c_name" "$V" "$c_st" "$V" "$c_try" "$V" "$c_gates"
+      "$c_id" "$V" "$c_name" "$V" "$c_st" "$V" "$x_model$c_try" "$V" "$c_gates"
     ROWS+=("$row")
     if [ "$st" = "running" ]; then
       ROW_HL+=("$C_HILITE")
@@ -618,7 +649,7 @@ build_rows() {
       label_v lbl ST_LABEL "$tst"; label_v pln ST_PLAIN "$tst"
       cell_v c_st "$lbl" "$pln" "$COL_STATUS"
       printf -v row '%s %s %s %s %s %s %s %s %s %s' "$V" \
-        "$c_id" "$V" "$ttitle" "$V" "$c_st" "$V" "$c_try_tk" "$V" "$c_gates_tk"
+        "$c_id" "$V" "$ttitle" "$V" "$c_st" "$V" "$x_model_tk$c_try_tk" "$V" "$c_gates_tk"
       ROWS+=("$row")
       if [ "$tst" = "running" ]; then
         ROW_HL+=("$C_HILITE")
@@ -719,22 +750,31 @@ scroll_edge_v() { # <destino> <indice da linha>
 }
 
 draw_table() {
-  local r_id r_name r_status r_try r_gates
+  local r_id r_name r_status r_try r_gates r_model
   repeat_v r_id     '─' $((COL_ID+2))
   repeat_v r_name   '─' $((COL_NAME+2))
   repeat_v r_status '─' $((COL_STATUS+2))
   repeat_v r_try    '─' $((COL_TRY+2))
   repeat_v r_gates  '─' $((COL_GATES+2))
 
-  local sep_t sep_m sep_b
-  printf -v sep_t '%s┌%s┬%s┬%s┬%s┬%s┐%s' "$C_CYAN" \
-    "$r_id" "$r_name" "$r_status" "$r_try" "$r_gates" "$C_RESET"
-  printf -v sep_m '%s├%s┼%s┼%s┼%s┼%s┤%s' "$C_CYAN" \
-    "$r_id" "$r_name" "$r_status" "$r_try" "$r_gates" "$C_RESET"
-  printf -v sep_b '%s└%s┴%s┴%s┴%s┴%s┘%s' "$C_CYAN" \
-    "$r_id" "$r_name" "$r_status" "$r_try" "$r_gates" "$C_RESET"
-
   local V="${C_CYAN}│${C_RESET}"
+
+  # Coluna Modelo opcional: entra antes da Tentativa, como no build_rows.
+  local xm_t="" xm_m="" xm_b="" xm_h="" h_model
+  if [ "$COL_MODEL" -gt 0 ]; then
+    repeat_v r_model '─' $((COL_MODEL+2))
+    xm_t="${r_model}┬"; xm_m="${r_model}┼"; xm_b="${r_model}┴"
+    pad_v h_model 'Modelo' "$COL_MODEL"
+    xm_h="${C_CYAN}${h_model}${C_RESET} $V "
+  fi
+
+  local sep_t sep_m sep_b
+  printf -v sep_t '%s┌%s┬%s┬%s┬%s%s┬%s┐%s' "$C_CYAN" \
+    "$r_id" "$r_name" "$r_status" "$xm_t" "$r_try" "$r_gates" "$C_RESET"
+  printf -v sep_m '%s├%s┼%s┼%s┼%s%s┼%s┤%s' "$C_CYAN" \
+    "$r_id" "$r_name" "$r_status" "$xm_m" "$r_try" "$r_gates" "$C_RESET"
+  printf -v sep_b '%s└%s┴%s┴%s┴%s%s┴%s┘%s' "$C_CYAN" \
+    "$r_id" "$r_name" "$r_status" "$xm_b" "$r_try" "$r_gates" "$C_RESET"
 
   local h_id h_name h_status h_try h_gates
   pad_v h_id     'ID'          "$COL_ID"
@@ -748,7 +788,7 @@ draw_table() {
     "${C_CYAN}${h_id}${C_RESET}" "$V" \
     "${C_CYAN}${h_name}${C_RESET}" "$V" \
     "${C_CYAN}${h_status}${C_RESET}" "$V" \
-    "${C_CYAN}${h_try}${C_RESET}" "$V" \
+    "$xm_h${C_CYAN}${h_try}${C_RESET}" "$V" \
     "${C_CYAN}${h_gates}${C_RESET}" "$V"
   printf '%s\n' "$sep_m"
 

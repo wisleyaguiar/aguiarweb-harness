@@ -52,10 +52,14 @@ Format constraints (ralph's `split_phases` dictates them):
 - Each phase body starts with a context preamble (each ralph phase runs in a fresh engine session — the phase must be self-contained):
 
   ```
+  **Route:** sonnet/medium
+
   Antes de implementar, leia:
   1. `.spec/features/[slug]/SPEC.md` — requisitos RIGID que esta fase cobre
   2. `.spec/features/[slug]/PLAN.md` — decomposição completa, dependências e riscos
   ```
+
+- The `**Route:** <model>/<effort>` line picks the model and effort ralph's claude engine runs the phase on; other engines ignore it. The phase's highest task `Risk` decides: `High` (auth, permissions, money, data migration, security, concurrency, large refactor) → `opus/high`; `Medium`, or business logic across layers → `sonnet/high`; ordinary work (CRUD, tests, a few files) → `sonnet/medium`; mechanical work (config, docs, renames, repeating an existing pattern) → `haiku/low`. Use `opus/xhigh` only for new architecture where a mistake is costly. Keep it in the preamble, before the first `- [ ]`: ralph reads it only there.
 
 - Each task is a checkbox item — ralph's prompt enforces "não pule nenhum item marcado com [ ]":
 

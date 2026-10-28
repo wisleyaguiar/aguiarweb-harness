@@ -14,7 +14,7 @@ ralph deletes `.phases/` at the start of every run, so everything below belongs 
 
 | Source | What it holds |
 |---|---|
-| `.phases/state/run.tsv` | Tab-separated. `META <key> <value>` — `status`, `engine`, `input`, `test_cmd` (`—` = none resolved), `last_error`<br>`PHASE <n> <status> <attempt> <gates> <title>` — `<gates>` is 4 words, gates 0–3, each `pending`/`run`/`pass`/`fail`/`skip`, **last cycle only**<br>`TASK <phase> <i> <status> <title>` |
+| `.phases/state/run.tsv` | Tab-separated. `META <key> <value>` — `status`, `engine`, `input`, `test_cmd` (`—` = none resolved), `last_error`<br>`PHASE <n> <status> <attempt> <gates> <title>` — `<gates>` is 4 words, gates 0–3, each `pending`/`run`/`pass`/`fail`/`skip`, **last cycle only**<br>`TASK <phase> <i> <status> <title>`<br>`ROUTE <phase> <model> <effort> <source>` — claude engine only, **last cycle only**; `-` = engine default; source `flag`/`plano`/`engine`/`engine*`/`openai`/`jev`, or `ciclo` when a fix cycle stepped it up |
 | `.phases/manifest.txt` | `<slug>.md\|<n>\|<title>` — maps a phase number to the `<slug>` the files below are named after |
 | `.phases/prompts/<slug>.cycle-<N>.txt`, N ≥ 2 | the fix prompt; its `## Motivo da falha (<gate>)` block is the real cause cycle N−1 failed |
 | `.phases/logs/<slug>.verify-<N>.log` | gate 3 verdicts: `TASK <n>: DONE`/`INCOMPLETE — …`, `SCOPE: OK`/`WARN — …`, `STANDARDS: OK`/`WARN — …`. Codex echoes them more than once; the last one wins |
@@ -62,6 +62,7 @@ Turn each cause into one candidate. First match wins:
 | `SCOPE: WARN` | The session touched files no task names: a task is missing from the phase document, or its wording is too loose. |
 | The cycle log shows the session searching for, or editing, the wrong files | A missing **navigation pointer**: add one line to `AGENTS.md` naming the file, or re-run `/ai-context`. |
 | Gate 0 `fail` | The engine crashed or hit a limit. Environment, not instructions: note it, lowest severity. |
+| `ROUTE … ciclo` on a phase that passed | The phase only passed after ralph stepped the model or effort up. Raise its `**Route:**` line in the phase document to the level that passed, so the next run starts there. |
 
 Before you propose a line for `AGENTS.md`/`CLAUDE.md`, read the file. A rule it already states means its wording failed: propose sharpening that line, not adding a second one. A line that would not change what the agent does by default is a **no-op**: drop the candidate.
 

@@ -32,6 +32,26 @@
 #   --dashboard              painel ao vivo no terminal (requer ralph-watch.sh
 #                            ao lado deste script); os logs vao para
 #                            .phases/logs/ralph.log
+#   --model M                modelo da implementacao (so claude: haiku, sonnet,
+#                            opus ou id completo)
+#   --effort E               esforco da implementacao (so claude): low, medium,
+#                            high, xhigh ou max
+#   --route off|auto         auto decide modelo e esforco das fases sem flag nem
+#                            dica completa, antes do run (so claude; default: off)
+#
+# Modelo e esforco por fase (so engine claude; codex e agy rodam o loop basico):
+#   Precedencia, campo a campo: --model/--effort (ou RALPH_MODEL/RALPH_EFFORT) >
+#   dica `**Route:** sonnet/high` no preambulo da fase > --route auto > default
+#   do engine. A partir do ciclo 2 cada ciclo de correcao sobe um degrau
+#   (haiku > sonnet > opus; low > medium > high > xhigh > max), menos o que
+#   veio de flag: flag e fixa. Fase no default do engine nao sobe: nao ha de
+#   onde partir. O verificador (gate 3) nao herda a rota.
+#   --route auto sem RALPH_ROUTE_API: uma chamada barata do claude
+#   (RALPH_ROUTE_MODEL, default haiku) decide todas as fases. Com
+#   RALPH_ROUTE_API=openai|jev: uma chamada por fase a API — so os titulos da
+#   fase e das tasks saem da maquina — e o que falhar cai na decisao do claude.
+#   A decisao fica em .phases/routing.tsv e vale enquanto o documento nao mudar.
+#   Limite de uso durante a decisao espera o reset, como numa fase.
 #
 # Observabilidade:
 #   O estado do run e SEMPRE publicado em .phases/state/ (run.tsv + live.tsv),
@@ -98,6 +118,16 @@
 #   RALPH_TEST_CMD           comando de teste (gate 2); --test-cmd tem prioridade
 #   RALPH_VERIFY             gate 3: always (default) | auto | off
 #   RALPH_VERIFY_MODEL       modelo do verificador (default: sonnet no claude)
+#   RALPH_MODEL              modelo da implementacao (so claude); --model vence
+#   RALPH_EFFORT             esforco da implementacao (so claude); --effort vence
+#   RALPH_ROUTE              off (default) | auto; --route vence
+#   RALPH_ROUTE_API          openai | jev: com --route auto, a API decide
+#   RALPH_ROUTE_KEY          chave da API (obrigatoria com RALPH_ROUTE_API; nunca
+#                            chega as sessoes do engine)
+#   RALPH_ROUTE_URL          endpoint da API (default por API; so https://). Jev
+#                            pela OpenRouter: https://openrouter.ai/api/v1/systemone
+#   RALPH_ROUTE_MODEL        modelo de quem decide: haiku no claude; gpt-6-luna
+#                            (openai) ou jev-latest (jev) na API
 #   RALPH_MAX_CYCLES         ciclos de correcao por fase (default: 3)
 #   RALPH_MAX_LIMIT_WAITS    esperas consecutivas por limite, por fase (default: 20)
 #   RALPH_LIMIT_WAIT_DEFAULT fallback de espera em segundos (default: 1800)
@@ -130,11 +160,20 @@ MAX_CYCLES="${RALPH_MAX_CYCLES:-3}"
 VERIFY_MODE="${RALPH_VERIFY:-always}"
 VERIFY_MODEL=""
 DASHBOARD=false
+MODEL_FLAG=""
+EFFORT_FLAG=""
+ROUTE_MODE="${RALPH_ROUTE:-off}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --engine)      ENGINE="$2"; shift 2 ;;
     --engine=*)    ENGINE="${1#*=}"; shift ;;
+    --model)       MODEL_FLAG="$2"; shift 2 ;;
+    --model=*)     MODEL_FLAG="${1#*=}"; shift ;;
+    --effort)      EFFORT_FLAG="$2"; shift 2 ;;
+    --effort=*)    EFFORT_FLAG="${1#*=}"; shift ;;
+    --route)       ROUTE_MODE="$2"; shift 2 ;;
+    --route=*)     ROUTE_MODE="${1#*=}"; shift ;;
     --from)        FROM_PHASE="$2"; shift 2 ;;
     --from=*)      FROM_PHASE="${1#*=}"; shift ;;
     --max-cycles)  MAX_CYCLES="$2"; shift 2 ;;
@@ -144,7 +183,7 @@ while [[ $# -gt 0 ]]; do
     --keep-going)  KEEP_GOING=true; shift ;;
     --no-verify)   VERIFY_MODE="off"; shift ;;
     --dashboard)   DASHBOARD=true; shift ;;
-    -h|--help)     sed -n '2,83p' "$0"; exit 0 ;;
+    -h|--help)     awk 'NR >= 2 && /^set -euo/ { exit } NR >= 2' "$0"; exit 0 ;;
     *)             INPUT_FILE="$1"; shift ;;
   esac
 done
@@ -166,6 +205,25 @@ LIMIT_BUFFER="${RALPH_LIMIT_BUFFER:-60}"
 TEST_CMD=""
 SAIL_BIN=""
 LIMIT_WAITS=0
+
+# Modelo e esforco por fase — so no engine claude. Escadas do mais barato ao
+# mais caro: a escalada do ciclo de correcao anda nelas.
+MODEL=""
+EFFORT=""
+MODELS="haiku sonnet opus"
+EFFORTS="low medium high xhigh max"
+ROUTE_CHOICES="haiku-low sonnet-medium sonnet-high opus-high opus-xhigh"
+ROUTING_FILE="$PHASES_DIR/routing.tsv"
+ROUTE_API=""
+ROUTE_API_CFG=""
+ROUTE_URL=""
+ROUTE_KEY=""
+ROUTE_DECIDER=""
+ROUTE_SCHEMA=""
+# Rota da sessao corrente, preenchida por resolve_route antes de cada ciclo.
+R_MODEL=""
+R_EFFORT=""
+R_SRC=""
 # Arquivo da fase corrente: o watcher do stream usa os titulos das tasks para
 # casar um arquivo escrito com a task que o menciona.
 CURRENT_PHASE_FILE=""
@@ -430,6 +488,68 @@ resolve_test_cmd() {
   fi
 }
 
+in_list() { case " $2 " in *" $1 "*) [ -n "$1" ] ;; *) return 1 ;; esac; }
+
+# Modelo, esforco e rota sao recursos do claude; codex e agy rodam o loop basico.
+check_route_config() {
+  MODEL="${MODEL_FLAG:-${RALPH_MODEL:-}}"
+  EFFORT="${EFFORT_FLAG:-${RALPH_EFFORT:-}}"
+
+  case "$ROUTE_MODE" in
+    off|auto) ;;
+    *) fail "Valor invalido para --route: '$ROUTE_MODE'. Use off ou auto."; exit 1 ;;
+  esac
+
+  if [[ "$ENGINE" != "claude" ]] && { [ -n "$MODEL$EFFORT" ] || [ "$ROUTE_MODE" != "off" ]; }; then
+    fail "--model, --effort e --route (e RALPH_MODEL/RALPH_EFFORT/RALPH_ROUTE) sao so do engine claude."
+    exit 1
+  fi
+  case "$MODEL" in
+    *[[:space:]]*) fail "Valor invalido para --model: '$MODEL'."; exit 1 ;;
+  esac
+  if [ -n "$EFFORT" ] && ! in_list "$EFFORT" "$EFFORTS"; then
+    fail "Valor invalido para --effort: '$EFFORT'. Use: $EFFORTS."
+    exit 1
+  fi
+
+  ROUTE_API="${RALPH_ROUTE_API:-}"
+  if [ -n "$ROUTE_API" ] && [ "$ROUTE_MODE" = "off" ]; then
+    warn "RALPH_ROUTE_API ignorado: a decisao por fase so roda com --route auto."
+    ROUTE_API=""
+  fi
+
+  if [ -z "$ROUTE_API" ]; then
+    ROUTE_DECIDER="${RALPH_ROUTE_MODEL:-haiku}"
+  else
+    case "$ROUTE_API" in
+      openai) ROUTE_URL="${RALPH_ROUTE_URL:-https://api.openai.com/v1/decisions}"; ROUTE_DECIDER="${RALPH_ROUTE_MODEL:-gpt-6-luna}" ;;
+      jev)    ROUTE_URL="${RALPH_ROUTE_URL:-https://api.typesafe.ai/v1/systemone}"; ROUTE_DECIDER="${RALPH_ROUTE_MODEL:-jev-latest}" ;;
+      *) fail "Valor invalido para RALPH_ROUTE_API: '$ROUTE_API'. Use openai ou jev."; exit 1 ;;
+    esac
+    if [[ "$ROUTE_URL" != https://* ]]; then
+      fail "RALPH_ROUTE_URL tem que comecar com https://: '$ROUTE_URL'."
+      exit 1
+    fi
+    ROUTE_KEY="${RALPH_ROUTE_KEY:-}"
+    if [ -z "$ROUTE_KEY" ]; then
+      fail "RALPH_ROUTE_API=$ROUTE_API pede a chave em RALPH_ROUTE_KEY."
+      exit 1
+    fi
+    # A chave vai para um arquivo de config do curl entre aspas: aspas, barra
+    # invertida ou espaco quebrariam a linha.
+    case "$ROUTE_KEY" in
+      *[[:space:]\"\\]*) fail "RALPH_ROUTE_KEY tem caractere invalido (espaco, aspas ou barra invertida)."; exit 1 ;;
+    esac
+    if ! command -v curl &> /dev/null; then
+      fail "RALPH_ROUTE_API=$ROUTE_API precisa do curl instalado."
+      exit 1
+    fi
+    ROUTE_API_CFG="$ROUTE_API"
+  fi
+  # As sessoes do engine herdam o ambiente: a chave nao pode chegar ao agente.
+  unset RALPH_ROUTE_KEY
+}
+
 preflight_checks() {
   if [[ "$ENGINE" != "codex" && "$ENGINE" != "claude" && "$ENGINE" != "agy" ]]; then
     fail "Engine invalida: $ENGINE. Use 'codex', 'claude' ou 'agy'."
@@ -461,6 +581,8 @@ preflight_checks() {
   elif [[ "$ENGINE" == "claude" ]]; then
     VERIFY_MODEL="sonnet"
   fi
+
+  check_route_config
 
   if ! command -v "$ENGINE" &> /dev/null; then
     if [[ "$ENGINE" == "codex" ]]; then
@@ -512,7 +634,7 @@ manifest_entries() { grep -v '^#' "$MANIFEST" || true; }
 split_phases() {
   log "Quebrando $INPUT_FILE em fases..."
 
-  local new_stamp old_stamp="" progress_backup=""
+  local new_stamp old_stamp="" progress_backup="" routing_backup=""
   new_stamp="$(basename "$INPUT_FILE")@sha256:$(sha256sum "$INPUT_FILE" | cut -c1-12)"
 
   if [ -f "$MANIFEST" ]; then
@@ -520,6 +642,9 @@ split_phases() {
   fi
   if [ -f "$PROGRESS_FILE" ]; then
     progress_backup=$(cat "$PROGRESS_FILE")
+  fi
+  if [ -f "$ROUTING_FILE" ]; then
+    routing_backup=$(cat "$ROUTING_FILE")
   fi
 
   rm -rf "$PHASES_DIR"
@@ -534,6 +659,11 @@ split_phases() {
       warn "O documento de fases mudou desde a ultima execucao — progresso zerado."
       warn "Fases marcadas como feitas pertenciam a outro plano."
     fi
+  fi
+  # A rota decidida pelo --route auto segue a mesma regra: mesmo documento,
+  # mesma decisao (retomar nao paga a decisao de novo).
+  if [ -n "$routing_backup" ] && [ -n "$old_stamp" ] && [ "$old_stamp" = "$new_stamp" ]; then
+    printf '%s\n' "$routing_backup" > "$ROUTING_FILE"
   fi
 
   echo "# stamp: $new_stamp" > "$MANIFEST"
@@ -618,6 +748,9 @@ PH_TITLE=()
 PH_STATUS=()
 PH_ATTEMPT=()
 PH_GATES=()
+PH_MODEL=()
+PH_EFFORT=()
+PH_RSRC=()
 TK_KEYS=()
 TK_TITLES=()
 TK_STATUSES=()
@@ -736,6 +869,11 @@ state_flush() {
     for num in "${PHASE_NUMS[@]}"; do
       printf 'PHASE\t%s\t%s\t%s\t%s\t%s\n' \
         "$num" "${PH_STATUS[$num]}" "${PH_ATTEMPT[$num]}" "${PH_GATES[$num]}" "${PH_TITLE[$num]}"
+      # Campo vazio vira "-": IFS de tab junta tabs seguidos e deslocaria colunas.
+      if [ -n "${PH_MODEL[$num]:-}${PH_EFFORT[$num]:-}" ]; then
+        printf 'ROUTE\t%s\t%s\t%s\t%s\n' "$num" \
+          "${PH_MODEL[$num]:--}" "${PH_EFFORT[$num]:--}" "${PH_RSRC[$num]:--}"
+      fi
       for ((i = 1; i <= ${TK_COUNT[$num]:-0}; i++)); do
         printf 'TASK\t%s\t%s\t%s\t%s\n' "$num" "$i" \
           "$(task_status_get "$num" "$i")" "$(task_title_get "$num" "$i")"
@@ -753,6 +891,7 @@ state_init() {
 
   META_KEYS=(); META_VALUES=()
   PH_TITLE=(); PH_STATUS=(); PH_ATTEMPT=(); PH_GATES=()
+  PH_MODEL=(); PH_EFFORT=(); PH_RSRC=()
   TK_KEYS=(); TK_TITLES=(); TK_STATUSES=(); TK_COUNT=(); PHASE_NUMS=()
   meta_set project "$(basename "$(pwd)")"
   meta_set engine "$ENGINE"
@@ -1469,6 +1608,274 @@ wait_for_reset() {
 
 # run_engine <prompt_file> <log_file> <mode: impl|verify>
 # Loop de resiliencia a limite de uso: nao consome ciclo de correcao.
+# ---------------------------------------------------------------------------
+# Rota por fase: modelo e esforco (so engine claude)
+# ---------------------------------------------------------------------------
+#
+# Precedencia, campo a campo: --model/--effort (ou RALPH_MODEL/RALPH_EFFORT) >
+# dica `**Route:**` no preambulo da fase > decisao do --route auto > default do
+# engine. A partir do ciclo 2 cada ciclo sobe um degrau na escada o que nao veio
+# de flag: flag e fixa.
+
+# Dica do plano: `**Route:** sonnet/high` antes do primeiro item `- [ ]`. So o
+# preambulo conta — no corpo das tasks a palavra pode ser outra coisa.
+plan_route_hint() {
+  [ -f "$PHASES_DIR/$1" ] || return 0
+  awk '/^[[:space:]]*- \[[ xX]\]/ { exit }
+       match($0, /\*\*Route:\*\*[[:space:]]*[^[:space:]]+/) {
+         s = substr($0, RSTART, RLENGTH); sub(/\*\*Route:\*\*[[:space:]]*/, "", s); gsub(/`/, "", s)
+         print s; exit
+       }' "$PHASES_DIR/$1"
+}
+
+# ladder_up <valor> <escada> <degraus> — valor fora da escada (ex: id completo
+# de modelo) volta igual: nao ha como saber o que fica acima dele.
+ladder_up() {
+  local value="$1" steps="$3" w i=0 at=-1 last=""
+  for w in $2; do
+    [ "$w" = "$value" ] && at=$i
+    i=$((i + 1))
+  done
+  if [ "$at" -lt 0 ]; then printf '%s' "$value"; return 0; fi
+  i=0
+  for w in $2; do
+    last="$w"
+    [ "$i" -eq $((at + steps)) ] && break
+    i=$((i + 1))
+  done
+  printf '%s' "$last"
+}
+
+# route_lookup <fase> -> A_MODEL A_EFFORT A_SRC da decisao gravada; 1 se nao ha.
+route_lookup() {
+  local line
+  A_MODEL=""; A_EFFORT=""; A_SRC=""
+  [ -f "$ROUTING_FILE" ] || return 1
+  line=$(awk -F'\t' -v n="$1" '$1 == n { print; exit }' "$ROUTING_FILE")
+  [ -n "$line" ] || return 1
+  IFS=$'\t' read -r _ A_MODEL A_EFFORT A_SRC <<< "$line"
+}
+
+# resolve_route <arquivo-da-fase> <fase> <ciclo> [avisa] -> R_MODEL R_EFFORT R_SRC
+resolve_route() {
+  local file="$1" num="$2" cycle="$3" loud="${4:-0}" hint hm="" he="" msrc="" esrc=""
+  R_MODEL=""; R_EFFORT=""; R_SRC=""
+  [[ "$ENGINE" == "claude" ]] || return 0
+
+  hint=$(plan_route_hint "$file")
+  if [ -n "$hint" ]; then
+    hm="${hint%%/*}"
+    [[ "$hint" == */* ]] && he="${hint#*/}"
+    [ "$hm" = "-" ] && hm=""
+    [ "$he" = "-" ] && he=""
+    if [ -n "$hm" ] && ! in_list "$hm" "$MODELS"; then
+      [ "$loud" = 1 ] && warn "Fase $num: modelo '$hm' do **Route:** ignorado (use: $MODELS)"
+      hm=""
+    fi
+    if [ -n "$he" ] && ! in_list "$he" "$EFFORTS"; then
+      [ "$loud" = 1 ] && warn "Fase $num: esforco '$he' do **Route:** ignorado (use: $EFFORTS)"
+      he=""
+    fi
+  fi
+  A_MODEL=""; A_EFFORT=""; A_SRC=""
+  # Com --route off uma decisao antiga gravada nao vaza para este run.
+  [ "$ROUTE_MODE" = "auto" ] && route_lookup "$num" || true
+
+  if [ -n "$MODEL" ]; then R_MODEL="$MODEL"; msrc="flag"
+  elif [ -n "$hm" ]; then R_MODEL="$hm"; msrc="plano"
+  elif [ -n "$A_MODEL" ]; then R_MODEL="$A_MODEL"; msrc="$A_SRC"
+  fi
+  if [ -n "$EFFORT" ]; then R_EFFORT="$EFFORT"; esrc="flag"
+  elif [ -n "$he" ]; then R_EFFORT="$he"; esrc="plano"
+  elif [ -n "$A_EFFORT" ]; then R_EFFORT="$A_EFFORT"; esrc="$A_SRC"
+  fi
+  R_SRC="${msrc:-$esrc}"
+
+  [ "$cycle" -gt 1 ] || return 0
+  local up=$((cycle - 1)) before="$R_MODEL/$R_EFFORT"
+  [ -n "$R_MODEL" ] && [ "$msrc" != "flag" ] && R_MODEL=$(ladder_up "$R_MODEL" "$MODELS" "$up")
+  [ -n "$R_EFFORT" ] && [ "$esrc" != "flag" ] && R_EFFORT=$(ladder_up "$R_EFFORT" "$EFFORTS" "$up")
+  [ "$R_MODEL/$R_EFFORT" != "$before" ] && R_SRC="ciclo"
+  return 0
+}
+
+route_state() { PH_MODEL[$1]="$R_MODEL"; PH_EFFORT[$1]="$R_EFFORT"; PH_RSRC[$1]="$R_SRC"; }
+
+# Dica completa (modelo e esforco validos) dispensa a decisao automatica. Dica
+# parcial, invalida ou o placeholder do template vai ao decisor, que preenche
+# o que falta: a precedencia e campo a campo.
+route_hint_complete() {
+  local hint
+  hint=$(plan_route_hint "$1")
+  [[ "$hint" == */* ]] && in_list "${hint%%/*}" "$MODELS" && in_list "${hint#*/}" "$EFFORTS"
+}
+
+# Texto para dentro de uma string JSON. sed, nao ${s//\\/...}: a barra
+# invertida na substituicao muda entre o Bash 3.2 e o 5.
+json_escape() { printf '%s' "$1" | tr '\t\r\n' '   ' | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# Criterio adaptado do mod switchboard (claude-code-mods 0.3.1, estilo saver):
+# o mais barato que ainda faz a fase bem.
+ROUTE_QUESTION="Uma fase de implementacao vai rodar numa sessao nova de um agente de codigo. Qual e a combinacao mais barata de modelo e esforco que ainda faz esta fase bem?"
+route_desc() {
+  case "$1" in
+    haiku-low)     echo "Trabalho mecanico: configuracao, renomear, docs, repetir um padrao que ja existe no repositorio." ;;
+    sonnet-medium) echo "Trabalho comum: CRUD, feature com plano claro, testes, ajustes em poucos arquivos." ;;
+    sonnet-high)   echo "Feature com regra de negocio, varios arquivos ou integracao entre camadas." ;;
+    opus-high)     echo "Dificil: autenticacao, permissoes, dinheiro, migracao de dados, seguranca, concorrencia, refactor grande." ;;
+    opus-xhigh)    echo "O mais dificil: arquitetura nova, muitas pecas acopladas, onde um erro custa caro." ;;
+  esac
+}
+
+route_save() { printf '%s\t%s\t%s\t%s\n' "$1" "${2%-*}" "${2#*-}" "$3" >> "$ROUTING_FILE"; }
+
+# O que o decisor da engine le de cada fase: preambulo, linhas de task e de
+# arquivos. O corpo inteiro nao: o prompt leva todas as fases juntas.
+route_phase_digest() {
+  awk '/^[[:space:]]*- \[[ xX]\]/ { t = 1; print; next }
+       !t || /Arquivos?:/ { print }' "$PHASES_DIR/$1" 2>/dev/null | head -c 2000 || true
+}
+
+# route_api_decide <arquivo> <fase> <titulo> — uma pergunta so, com modelo e
+# esforco juntos em cada opcao: a resposta tem um unico "choice" e o ralph le
+# sem jq. Formatos: OpenAI pela doc da Decisions API; Jev pelo route.ts do
+# switchboard 0.3.1 (nao conferido contra a doc da TypeSafe).
+# Sai da maquina so o titulo da fase e os das tasks, nunca o corpo.
+route_api_decide() {
+  local file="$1" num="$2" title="$3" summary body c opts="" code flat choice conf
+  local body_file="$LOG_DIR/route-api.request.json" resp_file="$LOG_DIR/route-api-$num.json"
+
+  summary="Fase $num: $title. Tasks: $(phase_task_titles "$file" | paste -sd ';' -)"
+  summary="${summary:0:1500}"
+  if [ "$ROUTE_API" = "openai" ]; then
+    for c in $ROUTE_CHOICES; do
+      opts+="${opts:+,}{\"value\":\"$c\",\"description\":\"$(json_escape "$(route_desc "$c")")\"}"
+    done
+    body="{\"model\":\"$(json_escape "$ROUTE_DECIDER")\",\"input\":\"$(json_escape "$summary")\",\"questions\":[{\"type\":\"choice\",\"name\":\"route\",\"instructions\":\"$(json_escape "$ROUTE_QUESTION")\",\"choices\":[$opts]}]}"
+  else
+    for c in $ROUTE_CHOICES; do
+      opts+="${opts:+,}\"$c\":\"$(json_escape "$(route_desc "$c")")\""
+    done
+    body="{\"model\":\"$(json_escape "$ROUTE_DECIDER")\",\"state\":{\"phase\":\"$(json_escape "$summary")\"},\"questions\":{\"route\":{\"type\":\"choice\",\"instructions\":\"$(json_escape "$ROUTE_QUESTION")\",\"criteria\":{$opts}}}}"
+  fi
+  printf '%s' "$body" > "$body_file"
+
+  # A chave vai pelo stdin, como config do curl, nunca pelo argv: nao aparece no ps.
+  code=$(printf 'header = "Authorization: Bearer %s"\n' "$ROUTE_KEY" \
+    | curl -sS --max-time 5 -K - -H 'Content-Type: application/json' \
+        --data-binary @"$body_file" -o "$resp_file" -w '%{http_code}' "$ROUTE_URL" 2>/dev/null) || code="000"
+
+  case "$code" in
+    200) ;;
+    # 402 = sem credito (OpenRouter): como chave recusada, nao melhora na fase seguinte.
+    401|402|403)
+      warn "$ROUTE_API recusou o pedido (HTTP $code: chave ou credito): API desligada neste run; a engine decide."
+      ROUTE_API=""
+      return 1
+      ;;
+    *)
+      warn "Fase $num: $ROUTE_API nao respondeu (HTTP $code); a engine decide."
+      return 1
+      ;;
+  esac
+
+  flat=$(tr -d '\n' < "$resp_file")
+  choice=$(printf '%s' "$flat" | sed -n 's/.*"choice"[[:space:]]*:[[:space:]]*"\([a-z-]*\)".*/\1/p')
+  if ! in_list "$choice" "$ROUTE_CHOICES"; then
+    warn "Fase $num: $ROUTE_API nao deu uma opcao valida; a engine decide."
+    return 1
+  fi
+  conf=$(printf '%s' "$flat" | sed -n 's/.*"confidence"[[:space:]]*:[[:space:]]*\([0-9.eE+-]*\).*/\1/p')
+  if [ -n "$conf" ] && awk -v c="$conf" 'BEGIN { exit !(c + 0 < 0.5) }'; then
+    warn "Fase $num: $ROUTE_API escolheu $choice com confianca $conf (< 0.5); a engine decide."
+    return 1
+  fi
+  route_save "$num" "$choice" "$ROUTE_API"
+  log "Fase $num: $ROUTE_API escolheu $choice${conf:+ (confianca $conf)}"
+}
+
+# route_engine_decide <arquivo|fase|titulo>... — uma chamada so, barata, para
+# todas as fases: o claude devolve um JSON validado por --json-schema.
+route_engine_decide() {
+  local entry file num title c enum="" props="" req="" so choice src="engine"
+  local prompt_file="$PROMPT_DIR/route.txt" log_file="$LOG_DIR/route.log"
+  [ -n "$ROUTE_API_CFG" ] && src="engine*"
+
+  for c in $ROUTE_CHOICES; do enum+="${enum:+,}\"$c\""; done
+  {
+    echo "Voce escolhe o modelo e o esforco de cada fase de um plano de implementacao."
+    echo "$ROUTE_QUESTION"
+    echo ""
+    echo "Opcoes:"
+    for c in $ROUTE_CHOICES; do echo "- $c: $(route_desc "$c")"; done
+    echo ""
+    echo "Responda com uma chave p<N> por fase. As fases:"
+    for entry in "$@"; do
+      IFS='|' read -r file num title <<< "$entry"
+      echo ""
+      echo "### p$num — $title"
+      route_phase_digest "$file"
+    done
+  } > "$prompt_file"
+
+  for entry in "$@"; do
+    IFS='|' read -r file num title <<< "$entry"
+    props+="${props:+,}\"p$num\":{\"type\":\"string\",\"enum\":[$enum]}"
+    req+="${req:+,}\"p$num\""
+  done
+  ROUTE_SCHEMA="{\"type\":\"object\",\"properties\":{$props},\"required\":[$req],\"additionalProperties\":false}"
+
+  # Hooks de notificacao leem RALPH_PHASE_* em toda sessao: a decisao e a "fase 0".
+  export RALPH_PHASE_NUM=0 RALPH_PHASE_TITLE="decisao de modelo e esforco" RALPH_PHASE_ATTEMPT=1
+  export RALPH_PHASE_TOTAL
+  RALPH_PHASE_TOTAL=$(manifest_entries | wc -l | tr -d ' ')
+  if ! run_engine "$prompt_file" "$log_file" route; then
+    warn "A decisao por fase falhou (veja $log_file); as fases seguem no default do engine."
+    return 0
+  fi
+  so=$(tr -d '\n' < "$log_file" | sed -n 's/.*"structured_output"[[:space:]]*:[[:space:]]*{\([^}]*\)}.*/\1/p')
+  for entry in "$@"; do
+    IFS='|' read -r file num title <<< "$entry"
+    choice=$(printf '%s' "$so" | sed -n "s/.*\"p$num\"[[:space:]]*:[[:space:]]*\"\([a-z-]*\)\".*/\1/p")
+    if in_list "$choice" "$ROUTE_CHOICES"; then
+      route_save "$num" "$choice" "$src"
+      log "Fase $num: a engine ($ROUTE_DECIDER) escolheu $choice"
+    else
+      warn "Fase $num: sem decisao valida; segue no default do engine."
+    fi
+  done
+}
+
+# Antes do run, em lote: decide a rota das fases sem flag nem dica completa. Falha de
+# decisao nunca para o run nem gasta ciclo — a fase cai no default do engine.
+route_phases() {
+  [ "$ROUTE_MODE" = "auto" ] || return 0
+  if [ -n "$MODEL" ] && [ -n "$EFFORT" ]; then
+    log "--route auto: modelo e esforco ja fixados por flag; nada a decidir"
+    return 0
+  fi
+
+  local file num title entry todo=() left=()
+  while IFS='|' read -r file num title; do
+    [ "$num" -lt "$FROM_PHASE" ] && continue
+    is_phase_done "$file" && continue
+    route_hint_complete "$file" && continue
+    route_lookup "$num" && continue
+    todo+=("$file|$num|$title")
+  done < <(manifest_entries)
+  [ "${#todo[@]}" -gt 0 ] || return 0
+
+  state_meta activity "decidindo modelo e esforco por fase"
+  log "Decidindo modelo e esforco de ${#todo[@]} fase(s) (${ROUTE_API:-engine}: $ROUTE_DECIDER)"
+  for entry in "${todo[@]}"; do
+    IFS='|' read -r file num title <<< "$entry"
+    if [ -n "$ROUTE_API" ] && route_api_decide "$file" "$num" "$title"; then continue; fi
+    left+=("$entry")
+  done
+  [ "${#left[@]}" -eq 0 ] || route_engine_decide "${left[@]}"
+  state_meta activity ""
+}
+
 run_engine() {
   local prompt_file="$1" log_file="$2" mode="$3"
 
@@ -1481,6 +1888,13 @@ run_engine() {
   local model_args=()
   if [[ "$mode" == "verify" ]] && [ -n "$VERIFY_MODEL" ]; then
     model_args=(--model "$VERIFY_MODEL")
+  fi
+  # Rota da fase (resolve_route) so na implementacao: o verificador fica barato
+  # de proposito e nao herda o modelo nem a escalada.
+  local route_args=()
+  if [[ "$mode" == "impl" ]]; then
+    [ -n "$R_MODEL" ] && route_args+=(--model "$R_MODEL")
+    [ -n "$R_EFFORT" ] && route_args+=(--effort "$R_EFFORT")
   fi
 
   while true; do
@@ -1504,7 +1918,15 @@ run_engine() {
     else
       # < /dev/null: claude -p le stdin quando nao e TTY. Sem o redirect ele
       # consome o stream de quem chamou (ex: o manifest do loop de fases).
-      if [[ "$mode" == "verify" ]]; then
+      if [[ "$mode" == "route" ]]; then
+        # Decisao da rota: o prompt vai pelo stdin (todas as fases juntas
+        # passariam do limite de 128 KB por argumento do Linux) e a resposta e
+        # o JSON de resultado com structured_output.
+        env -u CLAUDECODE claude -p --model "$ROUTE_DECIDER" --effort low \
+          --allowedTools "Read,Glob,Grep" \
+          --output-format json --json-schema "$ROUTE_SCHEMA" \
+          < "$prompt_file" > "$log_file" 2>&1 || rc=$?
+      elif [[ "$mode" == "verify" ]]; then
         env -u CLAUDECODE claude --dangerously-skip-permissions \
           ${model_args[@]+"${model_args[@]}"} \
           -p "$(cat "$prompt_file")" \
@@ -1518,6 +1940,7 @@ run_engine() {
         local quiet=0
         $DASHBOARD && quiet=1
         if env -u CLAUDECODE claude --dangerously-skip-permissions \
+             ${route_args[@]+"${route_args[@]}"} \
              -p "$(cat "$prompt_file")" \
              --output-format stream-json --verbose < /dev/null 2>&1 \
              | tee "$log_file" \
@@ -1806,7 +2229,10 @@ run_phase() {
     export RALPH_PHASE_ATTEMPT="$cycle"
     [ "$cycle" -gt 1 ] && warn "Ciclo de correcao $cycle/$MAX_CYCLES..."
 
+    resolve_route "$phase_file" "$phase_num" "$cycle"
+    route_state "$phase_num"
     state_phase_begin "$phase_num" "$cycle"
+    [ -n "$R_MODEL$R_EFFORT" ] && log "Modelo: ${R_MODEL:-default}, esforco: ${R_EFFORT:-default} ($R_SRC)"
 
     local prompt_file log_file rc=0 sig_before
     log_file="$LOG_DIR/${phase_file%.md}.cycle-${cycle}.log"
@@ -2018,16 +2444,28 @@ main() {
   [ "$FROM_PHASE" -gt 1 ] && log "Iniciando a partir da fase $FROM_PHASE"
   echo ""
 
-  local file num title
+  route_phases
+  if [[ "$ENGINE" != "claude" ]] && grep -qF '**Route:**' "$PHASES_DIR"/*.md 2>/dev/null; then
+    warn "Dicas **Route:** do plano ignoradas: modelo e esforco por fase sao so do engine claude."
+  fi
+
+  # A coluna de modelo do painel nasce cheia: preenchida so no inicio de cada
+  # fase, ela apareceria no meio do run e deslocaria a tabela.
+  local file num title route
   while IFS='|' read -r file num title; do
     if [ "$num" -lt "$FROM_PHASE" ]; then
       echo -e "  ${BLUE}[$num] $title (pulada por --from)${NC}"
     elif is_phase_done "$file"; then
       echo -e "  ${GREEN}[$num] $title (ja completada)${NC}"
     else
-      echo -e "  ${YELLOW}[$num] $title${NC}"
+      resolve_route "$file" "$num" 1 1
+      route_state "$num"
+      route=""
+      [ -n "$R_MODEL$R_EFFORT" ] && route=" — ${R_MODEL:-default}/${R_EFFORT:-default} ($R_SRC)"
+      echo -e "  ${YELLOW}[$num] $title$route${NC}"
     fi
   done < <(manifest_entries)
+  state_flush
 
   local start_time
   start_time=$(date +%s)
