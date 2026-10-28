@@ -4,6 +4,8 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-28
+
 ### Added
 
 - `ralph.sh` picks the model and effort of each phase on the claude engine: `--model`, `--effort` (or `RALPH_MODEL`, `RALPH_EFFORT`), or a `**Route:** sonnet/high` line in the phase preamble. From cycle 2 on, each fix cycle steps up one level, except what came from a flag. Codex and Antigravity keep the plain loop.
