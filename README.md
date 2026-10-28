@@ -250,6 +250,9 @@ Laravel Sail projects: the suite runs **inside the container** (`vendor/bin/sail
 | `--test-cmd "<cmd>"` | Project test command (gate 2) |
 | `--no-verify` | Disables gate 3 |
 | `--dashboard` | Live panel in the terminal (see below) |
+| `--model M` | Implementation model, claude only: `haiku`, `sonnet`, `opus`, or a full model id |
+| `--effort E` | Implementation effort, claude only: `low`, `medium`, `high`, `xhigh`, `max` |
+| `--route off\|auto` | `auto` picks model and effort for phases that have no flag and no complete hint, before the run (claude only; default: `off`) |
 
 | Variable | Effect |
 |---|---|
@@ -260,8 +263,41 @@ Laravel Sail projects: the suite runs **inside the container** (`vendor/bin/sail
 | `RALPH_MAX_LIMIT_WAITS` | Consecutive usage-limit waits, per phase (default: 20) |
 | `RALPH_LIMIT_WAIT_DEFAULT` | Fallback wait in seconds (default: 1800) |
 | `RALPH_LIMIT_BUFFER` | Extra seconds after the reset (default: 60) |
+| `RALPH_MODEL`, `RALPH_EFFORT`, `RALPH_ROUTE` | Same as `--model`, `--effort`, `--route`; the flag wins |
+| `RALPH_ROUTE_API` | `openai` \| `jev`: with `--route auto`, a decision API picks instead of claude |
+| `RALPH_ROUTE_KEY` | API key, required with `RALPH_ROUTE_API`. ralph removes it from the environment, so the engine sessions never see it |
+| `RALPH_ROUTE_URL` | API endpoint (default per API; `https://` only) |
+| `RALPH_ROUTE_MODEL` | The model that decides: `haiku` on claude; `gpt-6-luna` (openai) or `jev-latest` (jev) on the API |
 
 During each session, ralph exports `RALPH_ENGINE`, `RALPH_PHASE_TITLE`, `RALPH_PHASE_NUM`, `RALPH_PHASE_TOTAL`, `RALPH_PHASE_ATTEMPT`, and `RALPH_PHASE_MAX_ATTEMPTS` — useful for notification hooks (e.g. n8n).
+
+### Model and effort per phase (claude engine)
+
+With the claude engine, each phase can run on its own model and effort. Codex and Antigravity run the plain loop: ralph stops at preflight if you pass them `--model`, `--effort`, or `--route`.
+
+Precedence, field by field:
+
+1. `--model`/`--effort` (or `RALPH_MODEL`/`RALPH_EFFORT`). Fixed for the whole run.
+2. The `**Route:** sonnet/high` line in the phase preamble, before the first `- [ ]`. `/plan` and `/init:project-phases` write it from the phase's riskiest task.
+3. The `--route auto` decision.
+4. The engine default.
+
+From cycle 2 on, each fix cycle steps up one level (`haiku` → `sonnet` → `opus`; `low` → … → `max`), except what came from a flag. A phase on the engine default has no level to start from, so it does not step up. The verifier (gate 3) keeps its own cheap model.
+
+`--route auto` decides before the run, for phases with no flag and no complete hint (a partial or invalid `**Route:**` goes to the decision, which fills in what is missing):
+
+| `RALPH_ROUTE_API` | Who decides | What it reads |
+|---|---|---|
+| empty | One cheap claude call (`haiku`, effort `low`) for all phases, with `--json-schema` | Each phase's preamble and task lines |
+| `openai` or `jev` | One API call per phase ([OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions) or Jev). A failure, a refusal, a confidence below 0.5, or a timeout (5 s) sends that phase to claude. HTTP 401/403 turns the API off for the run | Only the phase title and task titles leave your machine |
+
+The decision is saved in `.phases/routing.tsv` and holds while the phase document does not change; to decide again, edit the document or delete that file. A failed decision never stops the run: the phase falls back to the engine default. A usage limit during the decision waits for the reset, like a phase does.
+
+| Feature | claude | codex | agy |
+|---|---|---|---|
+| `--model`, `--effort`, `**Route:**`, step-up per cycle | yes | no | no |
+| `--route auto` (claude or API) | yes | no | no |
+| `Modelo` column in the panel | yes | no | no |
 
 ### State and progress
 
@@ -289,6 +325,8 @@ ralph publishes run state to `.phases/state/` **always**, with or without `--das
 │ T2   │   ↳ cobrir falhas de rede com retry        │ ▶ Em execução  │ –         │ –                   │
 └──────┴────────────────────────────────────────────┴────────────────┴───────────┴─────────────────────┘
 ```
+
+When the run has a model or effort per phase (claude engine), the table gains a **Modelo** column before **Tentativa**: `sonnet/high`, with `↑` when a fix cycle stepped it up.
 
 ### Where per-task progress comes from
 

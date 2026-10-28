@@ -162,7 +162,7 @@ Write to `.spec/init/project-phases.md` (create the `.spec/init/` directories if
 
 ## Phase 1: <Foundation — Name>
 
-**Goal:** <one line.> · **Depends on:** <none / Phase N> · **Covers:** <stories/tables/workflows>
+**Goal:** <one line.> · **Depends on:** <none / Phase N> · **Covers:** <stories/tables/workflows> · **Route:** <model>/<effort>
 
 ### Phase 1.1: <Sub-phase name>
 
@@ -196,6 +196,7 @@ Rules for the document:
 - **Line 3** is the machine-owned **input stamp**: `<!-- inputs: project-description.md@sha256:<12 chars> user-stories.md@sha256:<12 chars> database-schema.md@sha256:<12 chars> -->`, each checksum being `sha256sum <file> | cut -c1-12` over the files as read in step 1. Refresh it on **every** run, including re-run Edits — the chain status uses it to detect drift. Never preserve a stale stamp as a "developer edit".
 - Foundation phases come first; models are relationship-complete out of the foundation.
 - Every phase (parent + its sub-phases) fits one agent session (see Phase sizing).
+- **Route** picks the model and effort `ralph.sh` runs the phase on with the claude engine; other engines ignore it. The hardest task in the phase decides: auth, permissions, money, data migration, security, concurrency, or a large refactor → `opus/high`; business rules across several layers → `sonnet/high`; ordinary work (CRUD, tests, a few files) → `sonnet/medium`; mechanical work (config, docs, renames, repeating an existing pattern) → `haiku/low`. Use `opus/xhigh` only for new architecture where a mistake is costly.
 - Every task is traceable; every business-logic task has feature tests; every screen task has a design ref (or an open question if design is missing).
 - Cover **everything** in the description, stories, and schema. Completeness beats brevity.
 
