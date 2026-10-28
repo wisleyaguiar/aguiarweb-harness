@@ -289,7 +289,18 @@ From cycle 2 on, each fix cycle steps up one level (`haiku` → `sonnet` → `op
 | `RALPH_ROUTE_API` | Who decides | What it reads |
 |---|---|---|
 | empty | One cheap claude call (`haiku`, effort `low`) for all phases, with `--json-schema` | Each phase's preamble and task lines |
-| `openai` or `jev` | One API call per phase ([OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions) or Jev). A failure, a refusal, a confidence below 0.5, or a timeout (5 s) sends that phase to claude. HTTP 401/403 turns the API off for the run | Only the phase title and task titles leave your machine |
+| `openai` or `jev` | One API call per phase ([OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions) or Jev). A failure, a refusal, a confidence below 0.5, or a timeout (5 s) sends that phase to claude. HTTP 401, 402, or 403 turns the API off for the run | Only the phase title and task titles leave your machine |
+
+Jev through [OpenRouter](https://openrouter.ai/docs/api/api-reference/systemone/submit-a-system-one-request) uses the same format, so only the URL and the key change:
+
+```bash
+export RALPH_ROUTE_API=jev
+export RALPH_ROUTE_URL=https://openrouter.ai/api/v1/systemone
+export RALPH_ROUTE_KEY="$OPENROUTER_API_KEY"
+./scripts/ralph.sh --engine claude --route auto
+```
+
+Use the `/systemone` endpoint, not the `typesafe/jev-router` model: the router answers the request with the model it picks, so you pay for that model, not for a decision. ralph removes `RALPH_ROUTE_KEY` from the sessions' environment, but an `OPENROUTER_API_KEY` exported in your shell still reaches them.
 
 The decision is saved in `.phases/routing.tsv` and holds while the phase document does not change; to decide again, edit the document or delete that file. A failed decision never stops the run: the phase falls back to the engine default. A usage limit during the decision waits for the reset, like a phase does.
 

@@ -124,7 +124,8 @@
 #   RALPH_ROUTE_API          openai | jev: com --route auto, a API decide
 #   RALPH_ROUTE_KEY          chave da API (obrigatoria com RALPH_ROUTE_API; nunca
 #                            chega as sessoes do engine)
-#   RALPH_ROUTE_URL          endpoint da API (default por API; so https://)
+#   RALPH_ROUTE_URL          endpoint da API (default por API; so https://). Jev
+#                            pela OpenRouter: https://openrouter.ai/api/v1/systemone
 #   RALPH_ROUTE_MODEL        modelo de quem decide: haiku no claude; gpt-6-luna
 #                            (openai) ou jev-latest (jev) na API
 #   RALPH_MAX_CYCLES         ciclos de correcao por fase (default: 3)
@@ -1766,8 +1767,9 @@ route_api_decide() {
 
   case "$code" in
     200) ;;
-    401|403)
-      warn "$ROUTE_API recusou a chave (HTTP $code): API desligada neste run; a engine decide."
+    # 402 = sem credito (OpenRouter): como chave recusada, nao melhora na fase seguinte.
+    401|402|403)
+      warn "$ROUTE_API recusou o pedido (HTTP $code: chave ou credito): API desligada neste run; a engine decide."
       ROUTE_API=""
       return 1
       ;;

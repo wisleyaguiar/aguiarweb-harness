@@ -325,6 +325,7 @@ cp "$data" "$state/curl_body_$n"
 echo "$url" > "$state/curl_url"
 case "${MOCK_API:-ok}" in
   401)     echo '{"error":"bad key"}' > "$out"; printf '401'; exit 0 ;;
+  402)     echo '{"error":{"code":402,"message":"Insufficient credits"}}' > "$out"; printf '402'; exit 0 ;;
   timeout) printf '000'; exit 28 ;;
   lowconf) body='{"answers":[{"type":"choice","name":"route","choice":"sonnet-high","confidence":0.31}]}' ;;
   refusal) body='{"answers":[{"type":"refusal","name":"route"}]}' ;;
@@ -1870,8 +1871,17 @@ if case_enabled route-api; then
   CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=401 \
     run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
   assert_eq 1 "$(cat "$d/state/curl_calls" 2>/dev/null)" "401 desliga a API no resto do run"
-  assert_contains "$d/out.log" "recusou a chave (HTTP 401)" "avisa a chave recusada"
+  assert_contains "$d/out.log" "recusou o pedido (HTTP 401" "avisa a chave recusada"
   assert_eq "haiku/low" "$(sed -n 2p "$d/state/impl_routes")" "engine decide no lugar"
+
+  # 402 = sem credito na OpenRouter: tambem desliga a API em vez de tentar fase a fase
+  d=$(new_case route-api-402)
+  CASE_ROUTE_API=jev CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=402 \
+    CASE_ROUTE_URL=https://openrouter.ai/api/v1/systemone \
+    run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  assert_eq 1 "$(cat "$d/state/curl_calls" 2>/dev/null)" "402 desliga a API no resto do run"
+  assert_eq "https://openrouter.ai/api/v1/systemone" "$(cat "$d/state/curl_url")" "RALPH_ROUTE_URL troca o endpoint"
+  assert_contains "$d/out.log" "HTTP 402" "avisa a falta de credito"
 
   d=$(new_case route-api-refusal)
   rc=$(CASE_ROUTE_API=openai CASE_ROUTE_KEY=test-key-123 CASE_MOCK_API=refusal \

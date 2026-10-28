@@ -285,7 +285,18 @@ O `--route auto` decide antes do run, para as fases sem flag e sem dica completa
 | `RALPH_ROUTE_API` | Quem decide | O que lê |
 |---|---|---|
 | vazio | Uma chamada barata do claude (`haiku`, esforço `low`) para todas as fases, com `--json-schema` | O preâmbulo e as linhas de task de cada fase |
-| `openai` ou `jev` | Uma chamada à API por fase ([OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions) ou Jev). Falha, recusa, confiança abaixo de 0,5 ou timeout (5 s) mandam aquela fase para o claude. HTTP 401/403 desliga a API no run | Só o título da fase e os das tasks saem da sua máquina |
+| `openai` ou `jev` | Uma chamada à API por fase ([OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions) ou Jev). Falha, recusa, confiança abaixo de 0,5 ou timeout (5 s) mandam aquela fase para o claude. HTTP 401, 402 ou 403 desliga a API no run | Só o título da fase e os das tasks saem da sua máquina |
+
+O Jev pela [OpenRouter](https://openrouter.ai/docs/api/api-reference/systemone/submit-a-system-one-request) usa o mesmo formato, então só mudam a URL e a chave:
+
+```bash
+export RALPH_ROUTE_API=jev
+export RALPH_ROUTE_URL=https://openrouter.ai/api/v1/systemone
+export RALPH_ROUTE_KEY="$OPENROUTER_API_KEY"
+./scripts/ralph.sh --engine claude --route auto
+```
+
+Use o endpoint `/systemone`, não o modelo `typesafe/jev-router`: o roteador responde o pedido com o modelo que escolhe, então você paga esse modelo, não uma decisão. O ralph tira `RALPH_ROUTE_KEY` do ambiente das sessões, mas uma `OPENROUTER_API_KEY` exportada no seu shell continua chegando a elas.
 
 A decisão fica em `.phases/routing.tsv` e vale enquanto o documento de fases não mudar; para decidir de novo, edite o documento ou apague esse arquivo. Uma decisão que falha nunca para o run: a fase cai no default do engine. Um limite de uso durante a decisão espera o reset, como numa fase.
 
