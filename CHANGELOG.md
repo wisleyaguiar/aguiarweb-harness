@@ -4,6 +4,8 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
 ### Added
 
 - `TESTING.md`: a record of what ran on real hosts (version, date, what ran) and a list of what has not run live yet.
