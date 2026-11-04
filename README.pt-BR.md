@@ -226,7 +226,7 @@ Sem argumento, resolve o input nesta ordem: `.spec/init/project-phases.md` → `
 | 2 | A suite de testes passa? | Rodada **pelo ralph**, fora da sessão do agente — o agente não pode "mentir verde" |
 | 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`). Também emite as linhas `SCOPE` (arquivos que nenhuma task pede) e `STANDARDS` (regras do `AGENTS.md`/`CLAUDE.md`): um `WARN` aparece no log e nunca reprova a fase |
 
-Qualquer gate vermelho → **ciclo de correção**: sessão nova recebe a fase inteira + a causa real da falha (nunca "os testes falharam" genérico). Default: 3 ciclos por fase.
+Qualquer gate vermelho → **ciclo de correção**: sessão nova recebe a fase inteira + a causa real da falha (nunca "os testes falharam" genérico). Quando o gate 3 reprova uma task que ele aprovou num ciclo anterior, a causa diz que a última correção a quebrou. Default: 3 ciclos por fase.
 
 Gates verdes com árvore limpa → fase já estava implementada em HEAD: marcada como feita, sem commit.
 

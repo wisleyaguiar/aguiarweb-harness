@@ -2104,6 +2104,27 @@ gate2_tests_pass() {
 # GATE3_RAN diz ao caminho "ja implementada" quais gates de fato validaram HEAD.
 GATE3_RAN=0
 
+# verify_regressions <phase_file> <ciclo> <linhas TASK n: INCOMPLETE>
+# Task INCOMPLETE agora que o verificador de um ciclo anterior deu DONE: a
+# correcao quebrou o que estava pronto. A fonte e o log do ultimo ciclo que rodou
+# o gate 3 (o ultimo veredito por task vence, como no gate 3), nunca o status em
+# memoria: o stream do agente tambem marca task como done. Uma linha por task.
+verify_regressions() {
+  local phase_file="$1" cycle="$2" incomplete="$3" c prev="" n last
+  for ((c = cycle - 1; c >= 1; c--)); do
+    prev="$LOG_DIR/${phase_file%.md}.verify-${c}.log"
+    [ -f "$prev" ] && break
+    prev=""
+  done
+  [ -n "$prev" ] || return 0
+  while IFS= read -r n; do
+    last=$(sed 's/^[[:space:]]*//' "$prev" | grep -E "^TASK $n: (DONE|INCOMPLETE)" | tail -n 1 || true)
+    case "$last" in
+      "TASK $n: DONE"*) echo "Regressao: a task $n estava DONE no ciclo $c e voltou a INCOMPLETE — a ultima correcao quebrou o que estava pronto." ;;
+    esac
+  done < <(printf '%s\n' "$incomplete" | sed -E 's/^TASK ([0-9]+):.*/\1/')
+}
+
 gate3_independent_verify() {
   local phase_file="$1" cycle="$2" session_wrote="$3"
   local verify_log="$LOG_DIR/${phase_file%.md}.verify-${cycle}.log"
@@ -2167,6 +2188,9 @@ gate3_independent_verify() {
 
   if [ -n "$incomplete" ]; then
     GATE_CAUSE="O verificador independente encontrou tasks incompletas:"$'\n'"$incomplete"
+    local regressions
+    regressions=$(verify_regressions "$phase_file" "$cycle" "$incomplete")
+    [ -n "$regressions" ] && GATE_CAUSE+=$'\n\n'"$regressions"
     return 1
   fi
 

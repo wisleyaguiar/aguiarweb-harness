@@ -160,6 +160,13 @@ if [ "$verify" -eq 1 ]; then
   elif [ "$scenario" = "verify-incomplete-once" ] && [ "$n" -eq 1 ]; then
     verdicts+="TASK 1: INCOMPLETE — o arquivo nao foi criado"$'\n'
     for i in $(seq 2 "$tasks"); do verdicts+="TASK $i: DONE"$'\n'; done
+  elif [ "$scenario" = "verify-flip" ] && [ "$n" -le 2 ]; then
+    # Chamada 1: falta a task 2. Chamada 2: a correcao entrega a 2 e quebra a 1.
+    if [ "$n" -eq 1 ]; then
+      verdicts+="TASK 1: DONE"$'\n'"TASK 2: INCOMPLETE — falta o arquivo B"$'\n'
+    else
+      verdicts+="TASK 1: INCOMPLETE — o arquivo A sumiu"$'\n'"TASK 2: DONE"$'\n'
+    fi
   else
     for i in $(seq 1 "$tasks"); do verdicts+="TASK $i: DONE"$'\n'; done
   fi
@@ -1914,6 +1921,23 @@ if case_enabled route-json-escape; then
     printf "%s %s %s %s" "$(ladder_up haiku "$MODELS" 1)" "$(ladder_up sonnet "$MODELS" 5)" \
       "$(ladder_up claude-opus-5-5 "$MODELS" 1)" "$(ladder_up high "$EFFORTS" 2)"' _ "$RALPH")
   assert_eq "sonnet opus claude-opus-5-5 max" "$out" "escada sobe, para no topo, id completo nao muda"
+fi
+
+# ---------------------------------------------------------------------------
+# 50. Task que o verificador deu DONE e a correcao seguinte quebrou: o prompt
+#     do proximo ciclo diz que foi regressao. A fonte e o verify log anterior.
+# ---------------------------------------------------------------------------
+if case_enabled verify-regression; then
+  header "50. task DONE que volta a INCOMPLETE vira aviso de regressao"
+  d=$(new_case verify-regression)
+  rc=$(run_ralph "$d" verify-flip --engine claude --test-cmd "$d/test.sh" --max-cycles 3)
+  p="$d/repo/.phases/prompts/phase-01"
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq 3 "$(commits "$d")" "1 commit por fase"
+  assert_contains "$p.cycle-2.txt" "TASK 2: INCOMPLETE" "ciclo 2 carrega a task que faltava"
+  assert_not_contains "$p.cycle-2.txt" "Regressao" "ciclo 2 sem aviso: nada que estava DONE caiu"
+  assert_contains "$p.cycle-3.txt" "Regressao: a task 1 estava DONE no ciclo 1" "ciclo 3 avisa que a correcao quebrou a task 1"
+  assert_not_contains "$p.cycle-3.txt" "a task 2 estava DONE" "so a task regredida entra no aviso"
 fi
 
 # ---------------------------------------------------------------------------

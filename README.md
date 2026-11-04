@@ -230,7 +230,7 @@ With no argument, the input resolves in this order: `.spec/init/project-phases.m
 | 2 | Does the test suite pass? | Run **by ralph itself**, outside the agent session — the agent cannot "fake green" |
 | 3 | Is each task actually in the code? | Independent read-only verifier session that emits `TASK <n>: DONE/INCOMPLETE` per task. Runs on every phase by default (`RALPH_VERIFY=always`); on the claude engine it uses a cheap model (`sonnet`). It also emits `SCOPE` (files no task asks for) and `STANDARDS` (`AGENTS.md`/`CLAUDE.md` rules) lines: a `WARN` shows up in the log and never fails the phase |
 
-Any red gate → **fix cycle**: a fresh session receives the full phase + the real failure cause (never a generic "tests failed"). Default: 3 cycles per phase.
+Any red gate → **fix cycle**: a fresh session receives the full phase + the real failure cause (never a generic "tests failed"). When gate 3 fails a task it passed in an earlier cycle, the cause says the last fix broke it. Default: 3 cycles per phase.
 
 Green gates with a clean tree → the phase was already implemented at HEAD: marked done, no commit.
 
