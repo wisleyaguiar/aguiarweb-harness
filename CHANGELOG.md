@@ -6,6 +6,7 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ### Added
 
+- `TESTING.md`: a record of what ran on real hosts (version, date, what ran) and a list of what has not run live yet.
 - `/ai-context` warns about file paths cited in the generated docs that do not exist in the repo (backticked paths with a `/` and an extension; globs, URLs, and placeholders are skipped). A warning never stops the run.
 - `/plan` reviews the plan with a fresh-context agent, `plan-reviewer`, on `standard` and `complete` tiers. It reads only what a `ralph.sh` session reads (project docs, init chain, SPEC, PLAN, PHASES) and writes `.handoff/plan-review.md`: a paraphrase of the plan and the findings a fresh implementer would hit (decisions left open, missing files, acceptance criteria that cannot be checked). Blockers go back to the planner once; the checkpoint shows the paraphrase and what is still open.
 - `/plan` checks that every RF and UI requirement in the SPEC's RIGID section is covered by a task in `PHASES.md`. It sends the uncovered ones back to the planner once, then asks you about any still left.
