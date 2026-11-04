@@ -20,6 +20,7 @@ Produce a complete plan — formal SPEC (GEARS RIGID/FLEXIBLE), resolved clarifi
 | §5 | `bc-harness:specifier` | `.spec/features/[slug]/SPEC.md` |
 | §6 (conditional) | `bc-harness:clarifier` | `SPEC.md` updated in-place |
 | §7 | `bc-harness:planner` | `.spec/features/[slug]/PLAN.md` + `PHASES.md` (view executável pelo `ralph.sh`) + optional `openapi.yaml` / `service.proto` / `asyncapi.yaml` |
+| §7 (standard / complete) | `bc-harness:plan-reviewer` | `.spec/features/[slug]/.handoff/plan-review.md` |
 
 ## Input — `$ARGUMENTS`
 
@@ -142,9 +143,15 @@ done
 
 When the planner reports contracts emitted, also `test -f` each reported contract path.
 
-Any `uncovered:` line → re-delegate to `planner` once with those ids. Still uncovered → list them at the human checkpoint; the developer adds a task or accepts the gap.
+Any `uncovered:` line → re-delegate to `planner` once with the same input plus those ids. Still uncovered → list them at the human checkpoint; the developer adds a task or accepts the gap.
 
-**Human checkpoint** — present task count, phases, risks, test seams, and contract paths when emitted; developer confirms the decomposition and the test seams before closing.
+**Plan review** (tier `standard` / `complete`; skip on `light`) — a fresh-context check that each phase can be built by a `ralph.sh` session, which reads only the project docs, the init chain, and the phase. The host cannot start a fresh subagent → skip it and say so at the checkpoint: a review in your own context is not independent.
+
+1. `mkdir -p .spec/features/[slug]/.handoff`, then delegate to `bc-harness:plan-reviewer` with: the PHASES/PLAN/SPEC paths, the `AGENTS.md` / `CLAUDE.md` and init chain paths that exist, the report path `.spec/features/[slug]/.handoff/plan-review.md`, and `round: 1`. Pass nothing else — not the description, the ACs, or your notes.
+2. `test -f .spec/features/[slug]/.handoff/plan-review.md`.
+3. Blockers > 0 → re-delegate to `planner` with the same §7 input plus the report path, re-run the whole **Verify on disk** block, then re-run the reviewer once with `round: 2`. Never a third round.
+
+**Human checkpoint** — present task count, phases, risks, test seams, and contract paths when emitted. When the plan review ran, Read `plan-review.md` and present its paraphrase and the open findings by severity; the developer compares the paraphrase with the intent. The developer confirms the decomposition and the test seams before closing.
 
 ### 8 — Summary
 
@@ -171,7 +178,7 @@ Closing lines: unresolved markers count (when > 0), then the execution handoff �
 
 ## Rules
 
-- **Delegate plugin-namespaced** (`bc-harness:specifier`, `bc-harness:clarifier`, `bc-harness:planner`), never bare.
+- **Delegate plugin-namespaced** (`bc-harness:specifier`, `bc-harness:clarifier`, `bc-harness:planner`, `bc-harness:plan-reviewer`), never bare.
 - **Write only under `.spec/features/[slug]/`** (the router itself only under `.handoff/`) — never application code.
 - **No issue tracker** — the confirmed description + ACs are the source of truth; never invent an external reference.
 - Scope grows mid-planning → stop, propose splitting into smaller features and re-running `/plan` per slice.

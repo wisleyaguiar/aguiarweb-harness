@@ -138,6 +138,7 @@ Características:
 - **Tier de complexidade** (`light` / `standard` / `complete`) classificado por sinais objetivos (nº de requisitos, multi-repo, contratos, mensageria); ajusta a profundidade da SPEC, a obrigatoriedade do clarifier e a emissão de contratos.
 - **Checkpoints humanos** em cada etapa: confirmação do input normalizado, aprovação da SPEC, resolução de ambiguidades, confirmação da decomposição.
 - **Clarifier em duas fases** — o agente analisa a SPEC e devolve perguntas priorizadas; o roteador as apresenta ao desenvolvedor e re-invoca o agente com as respostas, que atualiza a SPEC in-place.
+- **Revisão do plano sem contexto** (`standard` / `complete`) — o `plan-reviewer` lê só o que a sessão do `ralph.sh` lê (docs do projeto, cadeia init, SPEC, PLAN, PHASES), parafraseia o plano e aponta decisões deixadas ao implementador, arquivos que não existem e critérios de aceite que não dá para conferir. Blockers voltam ao planner uma vez; o resto chega ao checkpoint da decomposição.
 - **Gate de arquitetura** — exige `AGENTS.md` / `docs/agents/` (ou avisa e marca `architecture_reference_status: missing`). Sem contexto de arquitetura o pipeline nunca planeja em silêncio.
 - **Nunca escreve código de aplicação.** O fechamento aponta o handoff de execução:
 
@@ -402,6 +403,7 @@ Os comandos são **roteadores finos** — todo conhecimento de template vive nos
 | `specifier` | `/plan` §5 | Descrição confirmada + ACs → SPEC.md formal (GEARS, RIGID/FLEXIBLE) |
 | `clarifier` | `/plan` §6 | QA adversarial de requisitos: analisa ambiguidades, resolve com as respostas do dev |
 | `planner` | `/plan` §7 | SPEC → PLAN.md + PHASES.md + contratos; read-only sobre o código |
+| `plan-reviewer` | `/plan` §7 | Revisão sem contexto do PHASES.md, só com o que a sessão do ralph lê: paráfrase + o que ela não conseguiria construir sem chutar |
 | `ai-context-inspector` | `/ai-context` §3 | Varredura read-only do repo → digest estruturado |
 | `ai-context-core` | `/ai-context` §4 | Digest → `AGENTS.md` + `CLAUDE.md` + `GEMINI.md` |
 | `ai-context-docs` | `/ai-context` §4 | Digest → 8 arquivos `docs/agents/*.md` |
@@ -421,7 +423,7 @@ commands/
   plan.md                      /plan (roteador do pipeline de planejamento)
   ai-context.md                /ai-context (roteador da árvore de contexto)
   retro.md                     /retro (retrospectiva do run do ralph)
-agents/                        specifier, clarifier, planner,
+agents/                        specifier, clarifier, planner, plan-reviewer,
                                ai-context-{inspector,core,docs}
 skills/                        adaptadores Codex/Antigravity dos 8 fluxos públicos
 profiles/                      perfis de stack lidos pelos comandos init:*

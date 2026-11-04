@@ -6,6 +6,7 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ### Added
 
+- `/plan` reviews the plan with a fresh-context agent, `plan-reviewer`, on `standard` and `complete` tiers. It reads only what a `ralph.sh` session reads (project docs, init chain, SPEC, PLAN, PHASES) and writes `.handoff/plan-review.md`: a paraphrase of the plan and the findings a fresh implementer would hit (decisions left open, missing files, acceptance criteria that cannot be checked). Blockers go back to the planner once; the checkpoint shows the paraphrase and what is still open.
 - `/plan` checks that every RF and UI requirement in the SPEC's RIGID section is covered by a task in `PHASES.md`. It sends the uncovered ones back to the planner once, then asks you about any still left.
 
 ### Changed

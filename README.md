@@ -140,6 +140,7 @@ Key characteristics:
 - **Complexity tier** (`light` / `standard` / `complete`) classified from objective signals (requirement count, multi-repo, contracts, messaging); adjusts SPEC depth, whether the clarifier is mandatory, and contract emission.
 - **Human checkpoints** at every step: confirmation of the normalized input, SPEC approval, ambiguity resolution, decomposition sign-off.
 - **Two-phase clarifier** — the agent analyzes the SPEC and returns prioritized questions; the router presents them to the developer and re-invokes the agent with the answers, which updates the SPEC in-place.
+- **Fresh-context plan review** (`standard` / `complete`) — `plan-reviewer` reads only what a `ralph.sh` session reads (project docs, init chain, SPEC, PLAN, PHASES), paraphrases the plan, and flags decisions left to the implementer, missing files, and acceptance criteria that cannot be checked. Blockers go back to the planner once; the rest reaches the decomposition checkpoint.
 - **Architecture gate** — requires `AGENTS.md` / `docs/agents/` (or warns and flags `architecture_reference_status: missing`). The pipeline never plans silently without architecture context.
 - **Never writes application code.** The close-out points at the execution handoff:
 
@@ -406,6 +407,7 @@ Commands are **thin routers** — all template knowledge lives in the agents:
 | `specifier` | `/plan` §5 | Confirmed description + ACs → formal SPEC.md (GEARS, RIGID/FLEXIBLE) |
 | `clarifier` | `/plan` §6 | Adversarial requirements QA: finds ambiguities, resolves them with the developer's answers |
 | `planner` | `/plan` §7 | SPEC → PLAN.md + PHASES.md + contracts; read-only over the code |
+| `plan-reviewer` | `/plan` §7 | Fresh-context review of PHASES.md with only what a ralph session reads: paraphrase + what it could not build without guessing |
 | `ai-context-inspector` | `/ai-context` §3 | Read-only repo sweep → structured digest |
 | `ai-context-core` | `/ai-context` §4 | Digest → `AGENTS.md` + `CLAUDE.md` + `GEMINI.md` |
 | `ai-context-docs` | `/ai-context` §4 | Digest → the 8 `docs/agents/*.md` files |
@@ -425,7 +427,7 @@ commands/
   plan.md                      /plan (planning pipeline router)
   ai-context.md                /ai-context (context tree router)
   retro.md                     /retro (ralph run retrospective)
-agents/                        specifier, clarifier, planner,
+agents/                        specifier, clarifier, planner, plan-reviewer,
                                ai-context-{inspector,core,docs}
 skills/                        Codex/Antigravity adapters for the 8 public workflows
 profiles/                      stack profiles read by the init:* commands
