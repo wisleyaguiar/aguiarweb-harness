@@ -15,7 +15,8 @@ user-invocable: false
    - `bc-harness:specifier` → `<plugin-root>/agents/specifier.md`
    - `bc-harness:clarifier` → `<plugin-root>/agents/clarifier.md`
    - `bc-harness:planner` → `<plugin-root>/agents/planner.md`
-6. Delegate those roles to isolated subagents when the host supports them. Provide the role inputs required by the command and agent file. If subagents are unavailable, execute the same role sequentially in the main thread.
+   - `bc-harness:plan-reviewer` → `<plugin-root>/agents/plan-reviewer.md`
+6. Delegate those roles to isolated subagents when the host supports them. Provide the role inputs required by the command and agent file. If subagents are unavailable, execute the same role sequentially in the main thread — except `plan-reviewer`, which the command skips in that case.
 7. Keep all human checkpoints in the router. If a dedicated input tool is unavailable, ask in chat and stop until the user answers.
 
 Use equivalent Codex tools for Claude tool names. Preserve the command's prohibition on application-code changes.
