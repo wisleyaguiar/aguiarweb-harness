@@ -449,6 +449,8 @@ scripts/check-shell.sh       # bash -n em todos os scripts + shellcheck se dispo
 scripts/check-init-drift.sh  # âncoras verbatim das regras compartilhadas dos init:*
 ```
 
+O [TESTING.md](TESTING.md) registra o que rodou em hosts reais (Claude Code, Codex, Antigravity) e o que ainda não rodou ao vivo.
+
 Sobre o `check-init-drift.sh`: os quatro `commands/init/*.md` **inlinam de propósito** as mesmas regras de entrevista, idioma, re-run e staleness — comandos de plugin precisam ser auto-contidos em runtime (executam dentro do projeto do desenvolvedor, onde a raiz do plugin não é alcançável via `@`-includes). O custo dessa duplicação é drift silencioso; o script torna o drift barulhento.
 
 ## Princípios de design
