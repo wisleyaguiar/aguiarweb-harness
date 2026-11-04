@@ -4,6 +4,10 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- `/plan` checks that every RF and UI requirement in the SPEC's RIGID section is covered by a task in `PHASES.md`. It sends the uncovered ones back to the planner once, then asks you about any still left.
+
 ### Changed
 
 - `/plan` marks each file of a task as create, modify, or delete (`Arquivos: ... (criar)` in `PHASES.md`), searches the code for an existing module before it plans a new one, and leaves no design choice (schema, API path, dependency, edge case) to the session that implements the task.
