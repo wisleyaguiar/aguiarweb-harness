@@ -24,7 +24,7 @@ Any check fails → halt with `precondition_failed: <reason>` — never plan aga
 
 1. Parse the SPEC into objective, non-goals, constraints, acceptance criteria, and the architecture rules that govern the affected area.
 2. Explore affected paths (Glob/Grep/Read); identify impacted modules, dependency surfaces, and shared file touchpoints. Capture the **AS IS — Componentes impactados** diagram (verified nodes; `?` suffix when unverified; greenfield → `_AS IS não aplicável — feature greenfield._`) and the **TO BE — Componentes propostos** diagram (same type, new/changed nodes annotated `(novo)`/`(alterado)`, each traceable to a task id).
-3. Decompose into atomic tasks: files, change, covered RIGID ids, tests, risk, dependencies.
+3. Decompose into atomic tasks: files (each marked create, modify, or delete), change, covered RIGID ids, tests, risk, dependencies.
 4. Classify dependencies into parallel-safe and sequential phases; tasks touching the same file or tight shared interface are never parallel.
 5. Add risks (blast radius, mitigation, rollback) and rollout guidance.
 6. **Contract emission (conditional)** — see below.
@@ -65,14 +65,14 @@ Format constraints (ralph's `split_phases` dictates them):
 
   ```
   - [ ] T01 — <task title>
-        Arquivos: `path/to/file.ext`
+        Arquivos: `path/to/file.ext` (criar | alterar | remover)
         Mudança: <what to do>
         Cobre: RF-XX, UI-XX
         Acceptance criteria: <condição verificável contra o código>
         Testes: `path/to/test.ext` — <test case>
   ```
 
-  Sub-lines indented under the checkbox (no leading `-`), so the checkbox count equals the task count. Content copied from the PLAN task, condensed — never diverging. `Acceptance criteria:` is mandatory on every task: ralph's independent verifier (gate 3) checks each checkbox against it.
+  Sub-lines indented under the checkbox (no leading `-`), so the checkbox count equals the task count. Content copied from the PLAN task, condensed — never diverging. `Arquivos:` keeps each path's action from the PLAN, in Portuguese: `(criar)`, `(alterar)`, `(remover)` — a file to create is then never mistaken for a broken reference. `Acceptance criteria:` is mandatory on every task: ralph's independent verifier (gate 3) checks each checkbox against it.
 - Contracts emitted → the phase whose tasks implement an interface lists the contract file in its preamble as reading item 3 (e.g. `.spec/features/[slug]/openapi.yaml`).
 - Self-check before returning: `grep -Ec '^## Phase [0-9]+: '` equals the Execution Phases row count (or 1 for light); `grep -E '^## ' | grep -Ev '^## Phase [0-9]+: '` returns nothing; `grep -c '^- \[ \]'` equals the PLAN task count.
 
@@ -82,6 +82,8 @@ Format constraints (ralph's `split_phases` dictates them):
 - Prioritize risk control for auth, data, infrastructure, and migration changes.
 - Distinguish confirmed facts from assumptions (`[UNVERIFIED]` marker) and inferred behavior.
 - Tests absent for changed behavior → dedicated testing task.
+- **Reuse before creating**: before a task creates a module, helper, service, or component, Grep/Glob for one that already does the job. Found → the task modifies or calls it. Still creating one → say why under `## Assumptions`.
+- **Leave no decision to the implementer**: each ralph phase runs in a fresh session with only the project docs, the init chain, SPEC, PLAN, and the phase text. A task must not make that session choose a schema, an API path or signature, a dependency, or how to handle an edge case or error. Settle it in the task from the SPEC, the architecture, or the code; nothing settles it → `## Open Questions`.
 - **Architecture is source of truth over description text**: when SPEC/task intent contradicts the resolved architecture (code + AGENTS tree), plan toward the architecture and raise a QUESTION under `## Open Questions` naming both sides — never plan the contradicting version silently.
 - Architecture references provided → PLAN MUST name the source files and preserve the documented layering/delegation rules inside task descriptions. Missing → explicit warning in `## Open Questions`; never present the plan as architecture-validated.
 - One targeted question max when a blocking ambiguity prevents a reliable plan — return it instead of a partial plan.
@@ -127,7 +129,7 @@ flowchart LR
 ## Tasks
 
 ### T01 — <Task title>
-- **Files**: `path/to/file.ext`
+- **Files**: `path/to/file.ext` (create | modify | delete)
 - **Change**: what to do
 - **Covers**: RF-XX, UI-XX
 - **Tests**: `path/to/test.ext` — test case
@@ -170,7 +172,7 @@ Antes de implementar, leia:
 2. `.spec/features/[slug]/PLAN.md` — decomposição completa, dependências e riscos
 
 - [ ] T01 — <task title>
-      Arquivos: `path/to/file.ext`
+      Arquivos: `path/to/file.ext` (criar | alterar | remover)
       Mudança: <what to do>
       Cobre: RF-XX
       Acceptance criteria: <condição verificável>
