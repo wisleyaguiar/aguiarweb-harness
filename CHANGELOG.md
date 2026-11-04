@@ -11,6 +11,7 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ### Changed
 
+- `ralph.sh`: when gate 3 fails a task that it passed in an earlier cycle, the fix prompt says the last fix broke it. The source is the earlier cycle's verifier log, not what the agent marked done.
 - The three `/ai-context` agents start without your `CLAUDE.md` files (user, project, local) on Claude Code 2.1.271+ (`omitClaudeMd`). They read the project's `AGENTS.md` and `CLAUDE.md` from disk as the files to regenerate, never as instructions. Claude Code only; `agy plugin validate` accepts the key.
 - `/plan` marks each file of a task as create, modify, or delete (`Arquivos: ... (criar)` in `PHASES.md`), searches the code for an existing module before it plans a new one, and leaves no design choice (schema, API path, dependency, edge case) to the session that implements the task.
 
