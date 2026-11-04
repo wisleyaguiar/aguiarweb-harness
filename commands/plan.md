@@ -134,9 +134,15 @@ grep -Eq '^## Phase [0-9]+: ' .spec/features/[slug]/PHASES.md
 [ -z "$(grep -E '^## ' .spec/features/[slug]/PHASES.md | grep -Ev '^## Phase [0-9]+: ')" ]
 # checkbox count == PLAN task count
 [ "$(grep -c '^- \[ \]' .spec/features/[slug]/PHASES.md)" -eq "$(grep -Ec '^### T[0-9]+' .spec/features/[slug]/PLAN.md)" ]
+# every RF-/UI- id defined under the SPEC's '## RIGID' is on some 'Cobre:' line — prints each uncovered id
+for id in $(sed -n '/^## RIGID/,/^## /p' .spec/features/[slug]/SPEC.md | grep -E '^[[:space:]]*- (\*\*)?(RF|UI)-[0-9]+' | grep -oE '(RF|UI)-[0-9]+' | sort -u); do
+  grep 'Cobre:' .spec/features/[slug]/PHASES.md | grep -qw -- "$id" || echo "uncovered: $id"
+done
 ```
 
 When the planner reports contracts emitted, also `test -f` each reported contract path.
+
+Any `uncovered:` line → re-delegate to `planner` once with those ids. Still uncovered → list them at the human checkpoint; the developer adds a task or accepts the gap.
 
 **Human checkpoint** — present task count, phases, risks, test seams, and contract paths when emitted; developer confirms the decomposition and the test seams before closing.
 

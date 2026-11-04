@@ -74,7 +74,7 @@ Format constraints (ralph's `split_phases` dictates them):
 
   Sub-lines indented under the checkbox (no leading `-`), so the checkbox count equals the task count. Content copied from the PLAN task, condensed — never diverging. `Arquivos:` keeps each path's action from the PLAN, in Portuguese: `(criar)`, `(alterar)`, `(remover)` — a file to create is then never mistaken for a broken reference. `Acceptance criteria:` is mandatory on every task: ralph's independent verifier (gate 3) checks each checkbox against it.
 - Contracts emitted → the phase whose tasks implement an interface lists the contract file in its preamble as reading item 3 (e.g. `.spec/features/[slug]/openapi.yaml`).
-- Self-check before returning: `grep -Ec '^## Phase [0-9]+: '` equals the Execution Phases row count (or 1 for light); `grep -E '^## ' | grep -Ev '^## Phase [0-9]+: '` returns nothing; `grep -c '^- \[ \]'` equals the PLAN task count.
+- Self-check before returning: `grep -Ec '^## Phase [0-9]+: '` equals the Execution Phases row count (or 1 for light); `grep -E '^## ' | grep -Ev '^## Phase [0-9]+: '` returns nothing; `grep -c '^- \[ \]'` equals the PLAN task count; every `RF-`/`UI-` id defined under the SPEC's `## RIGID` appears on some `Cobre:` line.
 
 ## Decision Rules
 
