@@ -4,6 +4,10 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- `/plan` marks each file of a task as create, modify, or delete (`Arquivos: ... (criar)` in `PHASES.md`), searches the code for an existing module before it plans a new one, and leaves no design choice (schema, API path, dependency, edge case) to the session that implements the task.
+
 ## [0.7.0] - 2026-10-28
 
 ### Added
