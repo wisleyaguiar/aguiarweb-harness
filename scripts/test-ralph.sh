@@ -223,6 +223,13 @@ n=$(bump impl_calls)
 # A chave da API de decisao nao pode chegar a sessao do agente.
 echo "${RALPH_ROUTE_KEY:-unset}" > "$state/impl_env_key"
 
+# slow-term: sessao longa; registra o TERM que o on_exit do ralph manda a ela.
+if [ "$scenario" = "slow-term" ]; then
+  trap 'echo TERM >> "$state/engine_term"; exit 143' TERM
+  touch "$state/slow_midpoint"
+  for _ in 1 2 3 4 5 6; do sleep 1; done
+fi
+
 # Custo como no result real: modelUsage por modelo e, depois, o
 # model_usage_since_last_result (isca: o /retro nao pode somar de novo).
 emit_claude_ok()    { echo '{"type":"result","subtype":"success","is_error":false,"result":"implementado","duration_ms":2000,"duration_api_ms":1000,"total_cost_usd":0.25,"modelUsage":{"claude-sonnet-mock":{"inputTokens":9,"costUSD":0.2},"claude-opus-mock":{"inputTokens":1,"costUSD":0.05}},"model_usage_since_last_result":{"claude-isca-mock":{"costUSD":0.25}}}'; }
@@ -2031,6 +2038,37 @@ if case_enabled verify-scope-late; then
   assert_contains "$d/repo/.phases/prompts/phase-01.cycle-3.txt" "SCOPE: WARN — src/outro.txt" "ciclo 2 reprovado por escopo: a causa vai ao ciclo 3"
   assert_not_contains "$d/out.log" "Gate 3 (aviso) — SCOPE" "no ciclo 2 SCOPE nao e so aviso"
   assert_contains "$d/repo/.phases/prompts/phase-01.cycle-2.txt" "Altere so os arquivos que as tasks da fase pedem" "prompt de correcao limita os arquivos"
+fi
+
+# ---------------------------------------------------------------------------
+# 54. TERM no meio da sessao (o TaskStop do Claude Code manda TERM e SIGKILL
+#     ~1 s depois): o trap roda na hora, o run.tsv fecha como failed e a
+#     sessao recebe TERM. Com o engine em primeiro plano o trap esperava ela.
+# ---------------------------------------------------------------------------
+if case_enabled stop-mid-session; then
+  header "54. TERM no meio da sessao fecha o run.tsv na hora e para o engine"
+  d=$(new_case stop-mid-session)
+  (
+    cd "$d/repo" || exit 1
+    exec env -u RALPH_TEST_CMD -u RALPH_MAX_CYCLES \
+      PATH="$d/bin:$PATH" MOCK_STATE="$d/state" MOCK_SCENARIO=slow-term \
+      MOCK_TEST_CMD="$d/test.sh" RALPH_VERIFY=off \
+      bash "$RALPH" --engine claude --test-cmd "$d/test.sh" > "$d/out.log" 2>&1
+  ) &
+  ralph_pid=$!
+  for _ in $(seq 1 100); do [ -f "$d/state/slow_midpoint" ] && break; sleep 0.2; done
+  kill -TERM "$ralph_pid" 2>/dev/null
+  # ate 3 s (o ralph antigo so fecha quando a sessao de 6 s acaba)
+  for _ in $(seq 1 15); do
+    cp "$d/repo/.phases/state/run.tsv" "$d/snap.tsv" 2>/dev/null || : > "$d/snap.tsv"
+    grep -q "$(printf 'META\tstatus\tfailed')" "$d/snap.tsv" && break
+    sleep 0.2
+  done
+  wait "$ralph_pid" 2>/dev/null
+  # o mock so roda o trap quando o `sleep 1` dele acaba
+  for _ in $(seq 1 15); do [ -f "$d/state/engine_term" ] && break; sleep 0.2; done
+  assert_contains "$d/snap.tsv" "$(printf 'META\tstatus\tfailed')" "ate 3 s depois do TERM o run.tsv ja diz failed"
+  if [ -f "$d/state/engine_term" ]; then ok "a sessao recebeu TERM (nao fica orfa editando o repo)"; else bad "a sessao recebeu TERM (nao fica orfa editando o repo)"; fi
 fi
 
 # ---------------------------------------------------------------------------

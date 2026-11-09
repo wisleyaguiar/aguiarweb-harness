@@ -1897,6 +1897,20 @@ route_phases() {
   state_meta activity ""
 }
 
+# Sessoes e testes rodam em segundo plano + `bg_wait $!`. O TaskStop do Claude
+# Code manda TERM ao grupo e SIGKILL ~1 s depois; com o filho em primeiro plano
+# o bash so roda o trap quando o filho sai, e o run.tsv ficava `running`. O
+# wait e interrompido pelo sinal: o on_exit fecha o estado na hora e mata
+# ENGINE_PID (um filho com & ignora SIGINT, entao o Ctrl-C nao chega nele).
+ENGINE_PID=""
+bg_wait() {
+  ENGINE_PID="$1"
+  local rc=0
+  wait "$ENGINE_PID" || rc=$?
+  ENGINE_PID=""
+  return "$rc"
+}
+
 run_engine() {
   local prompt_file="$1" log_file="$2" mode="$3"
 
@@ -1941,15 +1955,17 @@ run_engine() {
       else
         # json: uma linha final com "status" — e o que o gate 0 le.
         # < /dev/null: mesma razao do claude -p (nao engolir o stream de quem chamou).
-        agy -p "$(cat "$prompt_file")" --dangerously-skip-permissions \
-          --output-format json < /dev/null 2>&1 | tee "$log_file" || rc=$?
+        { agy -p "$(cat "$prompt_file")" --dangerously-skip-permissions \
+          --output-format json < /dev/null 2>&1 | tee "$log_file"; } &
+        bg_wait $! || rc=$?
       fi
     elif [[ "$ENGINE" == "codex" ]]; then
       if [[ "$mode" == "verify" ]]; then
-        codex exec --sandbox read-only ${model_args[@]+"${model_args[@]}"} - < "$prompt_file" 2>&1 | tee "$log_file" || rc=$?
+        { codex exec --sandbox read-only ${model_args[@]+"${model_args[@]}"} - < "$prompt_file" 2>&1 | tee "$log_file"; } &
       else
-        codex exec --sandbox danger-full-access - < "$prompt_file" 2>&1 | tee "$log_file" || rc=$?
+        { codex exec --sandbox danger-full-access - < "$prompt_file" 2>&1 | tee "$log_file"; } &
       fi
+      bg_wait $! || rc=$?
     else
       # < /dev/null: claude -p le stdin quando nao e TTY. Sem o redirect ele
       # consome o stream de quem chamou (ex: o manifest do loop de fases).
@@ -1961,14 +1977,16 @@ run_engine() {
           --model "$ROUTE_DECIDER" --effort low \
           --allowedTools "Read,Glob,Grep" \
           --output-format json --json-schema "$ROUTE_SCHEMA" \
-          < "$prompt_file" > "$log_file" 2>&1 || rc=$?
+          < "$prompt_file" > "$log_file" 2>&1 &
+        bg_wait $! || rc=$?
       elif [[ "$mode" == "verify" ]]; then
-        env -u CLAUDECODE claude --dangerously-skip-permissions \
+        { env -u CLAUDECODE claude --dangerously-skip-permissions \
           ${iso_args[@]+"${iso_args[@]}"} \
           ${model_args[@]+"${model_args[@]}"} \
           -p "$(cat "$prompt_file")" \
           --allowedTools "Read,Glob,Grep" \
-          --output-format text < /dev/null 2>&1 | tee "$log_file" || rc=$?
+          --output-format text < /dev/null 2>&1 | tee "$log_file"; } &
+        bg_wait $! || rc=$?
       else
         # stream-json: eventos linha a linha ENQUANTO a sessao roda — e o que
         # da progresso por task ao painel. O JSON de resultado continua sendo a
@@ -1976,17 +1994,14 @@ run_engine() {
         # O exit code do CLI e sinal fraco; quem decide e o gate 0.
         local quiet=0
         $DASHBOARD && quiet=1
-        if env -u CLAUDECODE claude --dangerously-skip-permissions \
+        { env -u CLAUDECODE claude --dangerously-skip-permissions \
              ${iso_args[@]+"${iso_args[@]}"} \
              ${route_args[@]+"${route_args[@]}"} \
              -p "$(cat "$prompt_file")" \
              --output-format stream-json --verbose < /dev/null 2>&1 \
              | tee "$log_file" \
-             | stream_watch "$LIVE_STATE" "${RALPH_PHASE_NUM:-0}" "$quiet" "$CURRENT_PHASE_FILE"; then
-          rc=0
-        else
-          rc=$?
-        fi
+             | stream_watch "$LIVE_STATE" "${RALPH_PHASE_NUM:-0}" "$quiet" "$CURRENT_PHASE_FILE"; } &
+        bg_wait $! || rc=$?
       fi
     fi
 
@@ -2027,8 +2042,10 @@ agy_verify() {
 
   # Skip-permissions so dentro da copia: sem ele o headless nega ferramentas ao
   # acaso e o verificador emite INCOMPLETE falso.
-  (cd "$AGY_VERIFY_DIR" && agy -p "$prompt" --dangerously-skip-permissions "$@" < /dev/null) 2>&1 \
-    | tee "$log_file" || rc=$?
+  # exec: o agy e filho direto do grupo, e o on_exit o alcanca (bg_wait).
+  { (cd "$AGY_VERIFY_DIR" && exec agy -p "$prompt" --dangerously-skip-permissions "$@" < /dev/null) 2>&1 \
+    | tee "$log_file"; } &
+  bg_wait $! || rc=$?
 
   agy_verify_cleanup
   return "$rc"
@@ -2121,7 +2138,8 @@ gate2_tests_pass() {
   local rc=0
   # < /dev/null: sail test (docker compose exec) anexa stdin e consumiria o
   # stream de quem chamou, alem de poder travar esperando input.
-  bash -c "$TEST_CMD" < /dev/null > "$test_log" 2>&1 || rc=$?
+  bash -c "$TEST_CMD" < /dev/null > "$test_log" 2>&1 &
+  bg_wait $! || rc=$?
 
   if [ "$rc" -ne 0 ]; then
     GATE_CAUSE="O comando de teste do projeto ('$TEST_CMD') falhou com codigo $rc. Saida:"$'\n'"$(tail -n 200 "$test_log")"
@@ -2505,6 +2523,12 @@ on_exit() {
     meta_set status failed
     meta_set ended "$(date +%s)"
     state_flush
+  fi
+  # Sessao ou teste ainda vivo (sinal no meio do bg_wait): para ele, nao o deixa
+  # editando o repo sozinho. Filhos primeiro: o pai morto os deixaria orfaos.
+  if [ -n "$ENGINE_PID" ]; then
+    pkill -TERM -P "$ENGINE_PID" 2>/dev/null || true
+    kill -TERM "$ENGINE_PID" 2>/dev/null || true
   fi
   stop_dashboard
   agy_verify_cleanup
