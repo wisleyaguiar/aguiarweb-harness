@@ -4,6 +4,10 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- `/plan` checks whether the project is ready for an isolated ralph session (#17). At the decomposition checkpoint it asks one question: will ralph run the plan with `--engine claude`? If yes, the summary lists only what a PHASES.md task needs and the project lacks: an MCP server missing from `.mcp.json` (checked with `grep -q`, never printed, since its `env` can hold keys), a skill that is neither in `.claude/skills/` nor in a plugin the project enables, or a test command for gate 2. It ends with one line saying hooks and rules from `~/.claude` don't load, and never reads `~/.claude`. It only suggests: `/plan` still writes only under `.spec/features/<slug>/`. The handoff then shows `./ralph.sh --engine claude`, since ralph's default engine is `codex`. A live probe on Claude Code 2.1.319 decided the skill row: under the isolation flags, the project's `.claude/skills/` and `.claude/commands/` load, and so do the skills, commands, and agents of a plugin the project enables; `~/.claude/skills/` does not. The READMEs gain a `Session isolation (claude engine)` heading for the isolation notes, with this result.
+
 ### Fixed
 
 - The install instructions in both READMEs and the Codex manifest's `homepage` and `repository` point to this fork, `wisleyaguiar/aguiarweb-harness`, where the releases are. They pointed to `beerandcodeteam/beer-and-code-harness`, which has no release. Claude Code installs through `/plugin marketplace add` first: the `/plugin install bc-harness` the README showed found no marketplace. The READMEs now say the project is a fork.

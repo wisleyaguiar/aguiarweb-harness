@@ -10,6 +10,7 @@ Add a row for each run. Name the version, the date, and exactly what ran.
 
 | Host | Version | Date | What ran | Result |
 |---|---|---|---|---|
+| Claude Code | 2.1.319 | 2026-11-09 | `claude -p` (haiku) with `--setting-sources project,local --strict-mcp-config` in a temp repo, for #17: a skill in `.claude/skills/` was listed and ran through the `Skill` tool (its marker came back); a command in `.claude/commands/` was listed; `bc-harness@beer-and-code` enabled in the project `.claude/settings.json` listed its skills, commands (`init:*` too), and agents, with `mcp_servers: []`; a control run without that `settings.json` listed none of them; skills in `~/.claude/skills/` were absent from both runs | pass |
 | Claude Code | 2.1.319 | 2026-11-09 | `claude -p` with `--setting-sources project,local --strict-mcp-config` (and `--mcp-config .mcp.json` before `-p`), OAuth login, in a temp repo: 25 tools, 0 MCP, 0 hooks, no `advisor`; the project `CLAUDE.md` still applied; the user `CLAUDE.md` did not load (control run without the flags did); the prompt after `--mcp-config` was not consumed as a config file; a hook passed with `--settings` and a hook in the project `.claude/settings.json` both fired in the same session, and the `sail-guard` JSON that `ralph.sh` builds blocked `php artisan --version` in a fake Sail repo; `playwright@claude-plugins-official` enabled in a project `.claude/settings.json` loaded, but its MCP server did not; the same server copied into `mcpServers` of the project `.mcp.json` connected (25 playwright tools) | pass |
 | Claude Code | 2.1.319 | 2026-11-09 | TaskStop on a background Bash task: TERM to the whole process group, then SIGKILL about 1 s later; a bash parent blocked on a foreground child that ignores TERM never ran its trap. `ralph.sh` (mock claude engine) stopped by TaskStop mid-session in phase 2: `run.tsv` closed as `META status failed` with `ended`, the session got TERM, no process left | pass |
 | Local macOS: bash 5 and `/bin/bash` 3.2 | — | 2026-11-09 | `scripts/test-ralph.sh` (355 asserts; case 54 red against the `ralph.sh` before the `bg_wait` change, green with it), `scripts/check-shell.sh`, `scripts/check-init-drift.sh`, `scripts/check-codex-plugin.sh`, `claude plugin validate . --strict` | pass |
@@ -27,7 +28,7 @@ Add a row for each run. Name the version, the date, and exactly what ran.
 ## Not run live yet
 
 - `/init` hopping to an `init:*` command through the Skill tool in Claude Code.
-- `/plan` with the planner rules (file actions, reuse, no decision left open), the RIGID coverage check, the position-criterion rule, the small-surface tier, and `plan-reviewer` on a `standard` feature.
+- `/plan` with the planner rules (file actions, reuse, no decision left open), the RIGID coverage check, the position-criterion rule, the small-surface tier, `plan-reviewer` on a `standard` feature, and the ralph readiness list (#17).
 - `omitClaudeMd` keeping `CLAUDE.md` and `AGENTS.md` out of an agent's starting context.
 - `ralph.sh` writing the regression note on a real run.
 - `/ai-context` listing `missing path:` warnings on a real repo.

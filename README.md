@@ -147,6 +147,7 @@ Key characteristics:
 - **Two-phase clarifier** — the agent analyzes the SPEC and returns prioritized questions; the router presents them to the developer and re-invokes the agent with the answers, which updates the SPEC in-place.
 - **Fresh-context plan review** (`standard` / `complete`) — `plan-reviewer` reads only what a `ralph.sh` session reads (project docs, init chain, SPEC, PLAN, PHASES), paraphrases the plan, and flags decisions left to the implementer, missing files, and acceptance criteria that cannot be checked. Blockers go back to the planner once; the rest reaches the decomposition checkpoint.
 - **Architecture gate** — requires `AGENTS.md` / `docs/agents/` (or warns and flags `architecture_reference_status: missing`). The pipeline never plans silently without architecture context.
+- **Ralph readiness** — at the decomposition checkpoint, `/plan` asks whether ralph will run the plan with `--engine claude`. If yes, the summary lists what a task needs and the [isolated session](#session-isolation-claude-engine) won't find: an MCP server missing from `.mcp.json`, a skill outside `.claude/skills/` and the project's plugins, a test command. It only suggests; you apply the changes.
 - **Never writes application code.** The close-out points at the execution handoff:
 
 ```bash
@@ -282,11 +283,14 @@ Laravel Sail projects: the suite runs **inside the container** (`vendor/bin/sail
 
 During each session, ralph exports `RALPH_ENGINE`, `RALPH_PHASE_TITLE`, `RALPH_PHASE_NUM`, `RALPH_PHASE_TOTAL`, `RALPH_PHASE_ATTEMPT`, and `RALPH_PHASE_MAX_ATTEMPTS` — useful for notification hooks (e.g. n8n).
 
+### Session isolation (claude engine)
+
 With the claude engine, every session (implementation, verifier, and route decision) runs isolated from your user config. ralph passes `--setting-sources project,local --strict-mcp-config`, plus `--mcp-config .mcp.json` when the project root has one. Your `~/.claude/` plugins, MCP servers, hooks, settings, and `CLAUDE.md` don't load. The project's `CLAUDE.md` and `.claude/settings*.json` still do. bc-harness's own `sail-guard` hook still runs: when `sail-guard.sh` sits next to `ralph.sh`, ralph passes it with `--settings`. Sessions start faster, carry far fewer tool definitions, and don't follow personal rules that aren't the project's. What to watch:
 
 - Sessions run with `--dangerously-skip-permissions`. A guard hook that lives only in `~/.claude/settings.json` no longer applies: move it to the project's `.claude/settings.json`. The same goes for notification hooks.
 - A phase that needs an MCP server (a browser, for example) needs it in the project's `.mcp.json`.
 - A plugin you installed globally loads when the project enables it in `.claude/settings.json` (`"enabledPlugins": {"name@marketplace": true}`).
+- The project's `.claude/skills/` and `.claude/commands/` load, and so do the skills, commands, and agents of a plugin the project enables. Skills in `~/.claude/skills/` don't.
 - A plugin's MCP server stays out even then: `--strict-mcp-config` drops it. Copy each server entry from the plugin's `.mcp.json` into `mcpServers` in the project's `.mcp.json`, and replace `${CLAUDE_PLUGIN_ROOT}` with the plugin's installed path.
 - `env` and `apiKeyHelper` in `~/.claude/settings.json` don't apply either. If you reach the API through them (a gateway, Bedrock, Vertex), export the variables in your shell or use `RALPH_ISOLATE=0`.
 - `RALPH_ISOLATE=0` loads everything, as before.
