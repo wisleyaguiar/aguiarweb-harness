@@ -144,7 +144,7 @@ Características:
 - **Checkpoints humanos** em cada etapa: confirmação do input normalizado, aprovação da SPEC, resolução de ambiguidades, confirmação da decomposição.
 - **Clarifier em duas fases** — o agente analisa a SPEC e devolve perguntas priorizadas; o roteador as apresenta ao desenvolvedor e re-invoca o agente com as respostas, que atualiza a SPEC in-place.
 - **Revisão do plano sem contexto** (`standard` / `complete`) — o `plan-reviewer` lê só o que a sessão do `ralph.sh` lê (docs do projeto, cadeia init, SPEC, PLAN, PHASES), parafraseia o plano e aponta decisões deixadas ao implementador, arquivos que não existem e critérios de aceite que não dá para conferir. Blockers voltam ao planner uma vez; o resto chega ao checkpoint da decomposição.
-- **Gate de arquitetura** — exige `AGENTS.md` / `docs/agents/` (ou avisa e marca `architecture_reference_status: missing`). Sem contexto de arquitetura o pipeline nunca planeja em silêncio.
+- **Gate de arquitetura** — exige `AGENTS.md` / `docs/agents/` (ou avisa e marca `architecture_reference_status: missing`). Sem contexto de arquitetura o pipeline nunca planeja em silêncio. Também lista os commits do ralph feitos desde o último commit que mexeu na árvore, para você decidir se roda `/ai-context` de novo; nunca bloqueia.
 - **Prontidão para o ralph** — no checkpoint da decomposição, o `/plan` pergunta se o ralph vai rodar o plano com `--engine claude`. Se sim, o resumo lista o que uma task precisa e a [sessão isolada](#isolamento-da-sessão-engine-claude) não vai achar: um servidor MCP que falta no `.mcp.json`, uma skill fora do `.claude/skills/` e dos plugins do projeto, um comando de teste. Só sugere; quem aplica é você.
 - **Nunca escreve código de aplicação.** O fechamento aponta o handoff de execução:
 
@@ -177,7 +177,7 @@ Gera ou atualiza 11 artefatos a partir do **código implementado** (nunca lê `.
 Regras centrais:
 
 - **Idempotente** — upsert seguro; re-rodar atualiza só o que sofreu drift.
-- **Documenta a realidade (AS IS)** — código, manifests, CI e configs são as únicas fontes; nunca inventa, nunca prescreve.
+- **Documenta a realidade (AS IS)** — código, manifests, CI e configs são as únicas fontes; nunca inventa, nunca prescreve. Uma regra de negócio deduzida de um padrão, e não escrita no código, ganha `(inferida)` no `domain_rules.md`; o `/plan` confirma no código ou pergunta a você antes de virar requisito.
 - **Contrato de ownership** — todo arquivo gerado carrega banner na linha 3. Arquivo sem banner (escrito à mão) nunca é sobrescrito; `--adopt` incorpora as regras concretas dele à árvore gerada e assume a posse.
 - **Preserva blocos de terceiros** — regiões `<tag>...</tag>` (ex.: Laravel Boost) são re-anexadas verbatim na regeneração.
 - Filtros `+id` / `-id` geram só um subconjunto (ex.: `/ai-context +AGENTS +architecture`).

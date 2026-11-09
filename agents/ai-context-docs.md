@@ -115,6 +115,7 @@ Each: 1-line rationale + enforcement citation when it exists ("enforced by `phps
 
 - `### Overview` — bullets: the concepts the domain encodes.
 - One `### <rule name>` per significant rule: current behavior + implementing file/class. Use `digest.domain_signals` as the reading map; read those files.
+- A rule you deduce from a pattern (names, repeated checks, comments) and no condition, validation, or constant in the code states → end its heading with a space and `(inferida)`. Code states it → no mark.
 - Routing/decision matrices in code → reproduce as a table (input axes × outcome) + 1 line on how to extend.
 
 ### `api_contracts.md` — first line `# API Contracts`

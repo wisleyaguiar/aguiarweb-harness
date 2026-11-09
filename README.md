@@ -146,7 +146,7 @@ Key characteristics:
 - **Human checkpoints** at every step: confirmation of the normalized input, SPEC approval, ambiguity resolution, decomposition sign-off.
 - **Two-phase clarifier** — the agent analyzes the SPEC and returns prioritized questions; the router presents them to the developer and re-invokes the agent with the answers, which updates the SPEC in-place.
 - **Fresh-context plan review** (`standard` / `complete`) — `plan-reviewer` reads only what a `ralph.sh` session reads (project docs, init chain, SPEC, PLAN, PHASES), paraphrases the plan, and flags decisions left to the implementer, missing files, and acceptance criteria that cannot be checked. Blockers go back to the planner once; the rest reaches the decomposition checkpoint.
-- **Architecture gate** — requires `AGENTS.md` / `docs/agents/` (or warns and flags `architecture_reference_status: missing`). The pipeline never plans silently without architecture context.
+- **Architecture gate** — requires `AGENTS.md` / `docs/agents/` (or warns and flags `architecture_reference_status: missing`). The pipeline never plans silently without architecture context. It also lists the ralph commits made since the last commit that touched the tree, so you decide whether to re-run `/ai-context`; it never blocks.
 - **Ralph readiness** — at the decomposition checkpoint, `/plan` asks whether ralph will run the plan with `--engine claude`. If yes, the summary lists what a task needs and the [isolated session](#session-isolation-claude-engine) won't find: an MCP server missing from `.mcp.json`, a skill outside `.claude/skills/` and the project's plugins, a test command. It only suggests; you apply the changes.
 - **Never writes application code.** The close-out points at the execution handoff:
 
@@ -179,7 +179,7 @@ Generates or refreshes 11 artifacts from the **implemented code** (never reads `
 Core rules:
 
 - **Idempotent** — safe upsert; re-running updates only what drifted.
-- **Documents reality (AS IS)** — code, manifests, CI, and configs are the only sources; never invents, never prescribes.
+- **Documents reality (AS IS)** — code, manifests, CI, and configs are the only sources; never invents, never prescribes. A business rule deduced from a pattern, not stated in the code, gets `(inferida)` in `domain_rules.md`; `/plan` confirms it in the code or asks you before it becomes a requirement.
 - **Ownership contract** — every generated file carries a banner on line 3. A file without the banner (hand-written) is never clobbered; `--adopt` folds its concrete rules into the generated tree and takes ownership.
 - **Preserves third-party blocks** — `<tag>...</tag>` regions (e.g. Laravel Boost) are re-appended verbatim on regeneration.
 - `+id` / `-id` filters generate only a subset (e.g. `/ai-context +AGENTS +architecture`).

@@ -46,6 +46,7 @@ Any check fails → halt with `precondition_failed: <reason>` instead of produci
 - `light` tier → omit FLEXIBLE and Distribution by Repo.
 - Architecture references provided → SPEC MUST name the source files and cite ≥ 1 concrete rule (e.g. controller → service delegation). Missing → add `[NEEDS CLARIFICATION] Missing architecture guidance source (run /ai-context).` — never silent.
 - **Verify code-shaped literals before freezing them in RIGID** — endpoint paths, queue/topic names, env vars, file paths, class names: Grep/Glob first. Found → append `(verified at <file>:<line>)`. Not found → `[NEEDS CLARIFICATION]` with the candidate string and sources checked. Applies only to literals RIGID freezes; illustrative strings belong in FLEXIBLE.
+- A `domain_rules.md` rule whose heading ends in `(inferida)` never enters RIGID on its own: confirm it in the code (append `(verified at <file>:<line>)`) or mark `[NEEDS CLARIFICATION]`.
 - Init chain artifacts conflict with the confirmed ACs → the ACs win; flag the conflict as `[NEEDS CLARIFICATION]`.
 
 ## Constraints

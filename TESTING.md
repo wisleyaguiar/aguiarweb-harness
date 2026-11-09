@@ -32,4 +32,5 @@ Add a row for each run. Name the version, the date, and exactly what ran.
 - `omitClaudeMd` keeping `CLAUDE.md` and `AGENTS.md` out of an agent's starting context.
 - `ralph.sh` writing the regression note on a real run.
 - `/ai-context` listing `missing path:` warnings on a real repo.
+- `/ai-context` marking a deduced rule `(inferida)`, and `/plan` warning on a stale context tree; the warning's git snippet was checked on a scratch repo only (11 cases, merges and same-second commits included, Bash 3.2 and zsh).
 - Codex install from the GitHub marketplace.
