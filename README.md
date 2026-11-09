@@ -130,7 +130,7 @@ Produces, under `.spec/features/<slug>/`:
 | Artifact | Content |
 |---|---|
 | `SPEC.md` | Formal specification in GEARS syntax, with RIGID/FLEXIBLE sections, AS IS / TO BE diagrams, and binary acceptance criteria |
-| `PLAN.md` | Architecture-aware task decomposition with dependency phases, risks, and validation criteria |
+| `PLAN.md` | Architecture-aware task decomposition with phases sized for one ralph session, risks, and validation criteria |
 | `PHASES.md` | The PLAN rendered in the format executable by `ralph.sh` |
 | `openapi.yaml` / `service.proto` / `asyncapi.yaml` | Formal contracts, when the SPEC declares an API surface (conditional) |
 

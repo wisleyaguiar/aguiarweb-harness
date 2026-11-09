@@ -128,7 +128,7 @@ Produz, sob `.spec/features/<slug>/`:
 | Artefato | Conteúdo |
 |---|---|
 | `SPEC.md` | Especificação formal em GEARS, com seções RIGID/FLEXIBLE, diagramas AS IS / TO BE e acceptance criteria binários |
-| `PLAN.md` | Decomposição de tasks consciente da arquitetura, com fases de dependência, riscos e critérios de validação |
+| `PLAN.md` | Decomposição de tasks consciente da arquitetura, com fases do tamanho de uma sessão do ralph, riscos e critérios de validação |
 | `PHASES.md` | Visão do PLAN no formato executável pelo `ralph.sh` |
 | `openapi.yaml` / `service.proto` / `asyncapi.yaml` | Contratos formais, quando a SPEC declara superfície de API (condicional) |
 

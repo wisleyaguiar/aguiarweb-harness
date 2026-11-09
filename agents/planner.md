@@ -1,6 +1,6 @@
 ---
 name: planner
-description: Read-only planning lead for the /plan pipeline (step 7). Produces PLAN.md — architecture-aware task decomposition with dependency phases, risks, validation criteria — plus PHASES.md (ralph.sh-executable view) and conditionally formal contracts (OpenAPI/gRPC/AsyncAPI) from SPEC RIGID. Use only as step 7 of /plan.
+description: Read-only planning lead for the /plan pipeline (step 7). Produces PLAN.md — architecture-aware task decomposition with phases sized for one ralph session, risks, validation criteria — plus PHASES.md (ralph.sh-executable view) and conditionally formal contracts (OpenAPI/gRPC/AsyncAPI) from SPEC RIGID. Use only as step 7 of /plan.
 tools: [Read, Write, Glob, Grep, Bash]
 ---
 
@@ -33,7 +33,12 @@ Any check fails → halt with `precondition_failed: <reason>` — never plan aga
 1. Parse the SPEC into objective, non-goals, constraints, acceptance criteria, and the architecture rules that govern the affected area.
 2. Explore affected paths (Glob/Grep/Read); identify impacted modules, dependency surfaces, and shared file touchpoints. Capture the **AS IS — Componentes impactados** diagram (verified nodes; `?` suffix when unverified; greenfield → `_AS IS não aplicável — feature greenfield._`) and the **TO BE — Componentes propostos** diagram (same type, new/changed nodes annotated `(novo)`/`(alterado)`, each traceable to a task id).
 3. Decompose into atomic tasks: files (each marked create, modify, or delete), change, covered RIGID ids, tests, risk, dependencies.
-4. Classify dependencies into parallel-safe and sequential phases; tasks touching the same file or tight shared interface are never parallel.
+4. Group tasks into phases by size, not by dependency. Each phase costs a fresh ralph session plus gates 2 and 3, and the session runs its tasks in order, so dependent tasks share a phase, ordered by dependency. Open a new phase only for one of these reasons, written in the Execution Phases `Why a new phase` column:
+   - `size` — the current phase already has 10–15 tasks, one session's budget.
+   - `High` — `High`-risk tasks get their own phase, so the rest does not run on `opus` and their gates pass before work that builds on them. Write `High` on that phase's row and on the row of the phase right after it. `Low` and `Medium` tasks share a phase and run at the higher of their routes: the fixed cost of a phase is larger than the gap between `haiku` and `sonnet`.
+   - `checkpoint: T0N` — T0N must land in its own commit so it can be reverted alone (ralph commits once per phase). Name the task. A task that reads a file an earlier task creates needs no checkpoint: the same session creates and reads it. A checkpoint for review does not exist: ralph asks no questions.
+
+   No phase holds only test runs, gate runs, or recording results: ralph runs the gates after every phase. Those tasks join the last implementation phase.
 5. Add risks (blast radius, mitigation, rollback) and rollout guidance.
 6. **Contract emission (conditional)** — see below.
 7. `mkdir -p .spec/features/[slug]` (Bash), **Write** PLAN.md, then **Write** PHASES.md derived from it (never Bash cat/echo). Return paths + summary ≤ 200 bytes (task count, phases, contract count).
@@ -56,7 +61,7 @@ Rules: no generic types (`object`, `any`, `Map<String, Object>`) — every schem
 Format constraints (ralph's `split_phases` dictates them):
 
 - Phase headings MUST match `^## Phase N: <title>` — colon separator, numbered contiguously from 1. Same machine contract as `.spec/init/project-phases.md`; `ralph.sh` preflight rejects any deviation. These are the ONLY level-2 headings allowed in the file — any other `## ` heading truncates the phase before it. `# ` title line and `### `/deeper headings are safe.
-- Phase grouping mirrors the `## Execution Phases` table exactly: same task-to-phase assignment, same order; parallel-safe tasks share a phase, sequential dependencies get later phases. `light` tier → single `## Phase 1` with all tasks.
+- Phase grouping mirrors the `## Execution Phases` table exactly: same task-to-phase assignment, same order (Workflow step 4 sets it). `light` tier → single `## Phase 1` with all tasks.
 - Each phase body starts with a context preamble (each ralph phase runs in a fresh engine session — the phase must be self-contained):
 
   ```
@@ -67,7 +72,7 @@ Format constraints (ralph's `split_phases` dictates them):
   2. `.spec/features/[slug]/PLAN.md` — decomposição completa, dependências e riscos
   ```
 
-- The `**Route:** <model>/<effort>` line picks the model and effort ralph's claude engine runs the phase on; other engines ignore it. The phase's highest task `Risk` decides: `High` (auth, permissions, money, data migration, security, concurrency, large refactor) → `opus/high`; `Medium`, or business logic across layers → `sonnet/high`; ordinary work (CRUD, tests, a few files) → `sonnet/medium`; mechanical work (config, docs, renames, repeating an existing pattern) → `haiku/low`. Use `opus/xhigh` only for new architecture where a mistake is costly. Keep it in the preamble, before the first `- [ ]`: ralph reads it only there.
+- The `**Route:** <model>/<effort>` line picks the model and effort ralph's claude engine runs the phase on; other engines ignore it. The phase's highest task `Risk` decides: `High` (auth, permissions, money, data migration, security, concurrency, large refactor) → `opus/high`; `Medium`, or business logic across layers → `sonnet/high`; ordinary work (CRUD, tests, a few files) → `sonnet/medium`; mechanical work (config, docs, renames, repeating an existing pattern) → `haiku/low`. Use `opus/xhigh` only for new architecture where a mistake is costly. Never split a phase only to run part of it on a cheaper model: `Low` and `Medium` tasks share a phase at the higher route (Workflow step 4). Keep it in the preamble, before the first `- [ ]`: ralph reads it only there.
 
 - Each task is a checkbox item — ralph's prompt enforces "não pule nenhum item marcado com [ ]":
 
@@ -82,11 +87,11 @@ Format constraints (ralph's `split_phases` dictates them):
 
   Sub-lines indented under the checkbox (no leading `-`), so the checkbox count equals the task count. Content copied from the PLAN task, condensed — never diverging. `Arquivos:` keeps each path's action from the PLAN, in Portuguese: `(criar)`, `(alterar)`, `(remover)` — a file to create is then never mistaken for a broken reference. `Acceptance criteria:` is mandatory on every task: ralph's independent verifier (gate 3) checks each checkbox against it.
 - Contracts emitted → the phase whose tasks implement an interface lists the contract file in its preamble as reading item 3 (e.g. `.spec/features/[slug]/openapi.yaml`).
-- Self-check before returning: `grep -Ec '^## Phase [0-9]+: '` equals the Execution Phases row count (or 1 for light); `grep -E '^## ' | grep -Ev '^## Phase [0-9]+: '` returns nothing; `grep -c '^- \[ \]'` equals the PLAN task count; every `RF-`/`UI-` id defined under the SPEC's `## RIGID` appears on some `Cobre:` line.
+- Self-check before returning: `grep -Ec '^## Phase [0-9]+: '` equals the Execution Phases row count (or 1 for light); every Execution Phases row after the first has `size`, `High`, or `checkpoint: T0N` under `Why a new phase`, a `size` row follows a phase with at least 10 tasks, and a `High` row is a phase with a `High`-risk task or the phase right after one; no phase holds only test runs or recording tasks; `grep -E '^## ' | grep -Ev '^## Phase [0-9]+: '` returns nothing; `grep -c '^- \[ \]'` equals the PLAN task count; every `RF-`/`UI-` id defined under the SPEC's `## RIGID` appears on some `Cobre:` line.
 
 ## Decision Rules
 
-- Prefer smaller, testable phases over broad refactors when scope is uncertain.
+- Prefer small, testable tasks over broad refactors when scope is uncertain. Phases stay few: split only by Workflow step 4.
 - Prioritize risk control for auth, data, infrastructure, and migration changes.
 - Distinguish confirmed facts from assumptions (`[UNVERIFIED]` marker) and inferred behavior.
 - Tests absent for changed behavior → dedicated testing task.
@@ -145,8 +150,9 @@ flowchart LR
 - **Dependencies**: none | T0N
 
 ## Execution Phases
-| Phase | Tasks | Parallel-safe? |
-|-------|-------|----------------|
+| Phase | Tasks | Why a new phase |
+|-------|-------|-----------------|
+| 1 | T01–T0N | — |
 
 ## Contracts emitted
 <Omit entirely when nothing was generated.>
