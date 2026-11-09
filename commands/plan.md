@@ -153,7 +153,7 @@ Any `uncovered:` line → re-delegate to `planner` once with the same input plus
 2. `test -f .spec/features/[slug]/.handoff/plan-review.md`.
 3. Blockers > 0 → re-delegate to `planner` with the same §7 input plus the report path, re-run the whole **Verify on disk** block, then re-run the reviewer once with `round: 2`. Never a third round.
 
-**Human checkpoint** — present task count, phases, risks, test seams, and contract paths when emitted. When the plan review ran, Read `plan-review.md` and present its paraphrase and the open findings by severity; the developer compares the paraphrase with the intent. The developer confirms the decomposition and the test seams before closing.
+**Human checkpoint** — present task count, phases, risks, test seams, and contract paths when emitted. When the plan review ran, Read `plan-review.md` and present its paraphrase and the open findings by severity; the developer compares the paraphrase with the intent. The developer confirms the decomposition and the test seams before closing. Ask one more question, once: will this plan run with `ralph.sh --engine claude`? (ralph's default engine is `codex`.)
 
 ### 8 — Summary
 
@@ -166,7 +166,17 @@ Emit one table:
 | `.spec/features/[slug]/PHASES.md` | `created` / `updated` |
 | contract files | `created` / `skipped (light tier / no Contracts)` |
 
-Closing lines: unresolved markers count (when > 0), then the execution handoff — this command never implements; run:
+**Ralph readiness** — only when the §7 answer was yes; `no`, `codex`, or `agy` → skip it. A claude session in ralph runs isolated from `~/.claude`: it loads the project's `CLAUDE.md`, `.claude/settings*.json`, `.claude/skills/`, `.claude/commands/`, `.mcp.json`, and the plugins enabled in `.claude/settings.json` (but not their MCP servers), and nothing from the user's config. List only what a PHASES.md task needs and the project lacks; never a plugin or skill by taste, since every loaded tool costs tokens in every session. Suggest only: the developer applies it. Nothing missing → say so in one line.
+
+| Check | Missing when | Suggest |
+|---|---|---|
+| MCP server | a task or criterion drives a browser, takes a screenshot, or names an MCP server or tool, and `.mcp.json` has no entry for that server (`grep -q '"<server>"' .mcp.json`; never print `.mcp.json`, its `env` can hold keys) | add the server to `.mcp.json`, e.g. `claude mcp add --scope project <server> -- <command>`; a plugin's server: copy its entry as README § Session isolation says |
+| Skill | a task names a skill that is neither in `.claude/skills/<name>/` nor in a plugin listed in `enabledPlugins` of `.claude/settings.json` | copy the skill to `.claude/skills/`, or enable its plugin in `.claude/settings.json` |
+| Test command | no `test_cmd` row in the Stack Profile of `.spec/init/project-description.md`, and no manifest ralph detects (`artisan`, a `test` script in `composer.json` or `package.json`, `phpunit.xml` + `vendor/bin/phpunit`) | set `test_cmd` in the Stack Profile, or pass `--test-cmd`: without one, gate 2 is skipped. `--test-cmd` and `RALPH_TEST_CMD` are not visible from here |
+
+End the block with one line: hooks and rules that live only in `~/.claude` don't load either (README § Session isolation). Never read `~/.claude` to check them.
+
+Closing lines: unresolved markers count (when > 0), then the execution handoff — this command never implements; run (with `--engine claude` after `./ralph.sh` when the §7 answer was yes):
 
 ```
 ./ralph.sh .spec/features/[slug]/PHASES.md

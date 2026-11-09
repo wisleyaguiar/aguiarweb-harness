@@ -145,6 +145,7 @@ Características:
 - **Clarifier em duas fases** — o agente analisa a SPEC e devolve perguntas priorizadas; o roteador as apresenta ao desenvolvedor e re-invoca o agente com as respostas, que atualiza a SPEC in-place.
 - **Revisão do plano sem contexto** (`standard` / `complete`) — o `plan-reviewer` lê só o que a sessão do `ralph.sh` lê (docs do projeto, cadeia init, SPEC, PLAN, PHASES), parafraseia o plano e aponta decisões deixadas ao implementador, arquivos que não existem e critérios de aceite que não dá para conferir. Blockers voltam ao planner uma vez; o resto chega ao checkpoint da decomposição.
 - **Gate de arquitetura** — exige `AGENTS.md` / `docs/agents/` (ou avisa e marca `architecture_reference_status: missing`). Sem contexto de arquitetura o pipeline nunca planeja em silêncio.
+- **Prontidão para o ralph** — no checkpoint da decomposição, o `/plan` pergunta se o ralph vai rodar o plano com `--engine claude`. Se sim, o resumo lista o que uma task precisa e a [sessão isolada](#isolamento-da-sessão-engine-claude) não vai achar: um servidor MCP que falta no `.mcp.json`, uma skill fora do `.claude/skills/` e dos plugins do projeto, um comando de teste. Só sugere; quem aplica é você.
 - **Nunca escreve código de aplicação.** O fechamento aponta o handoff de execução:
 
 ```bash
@@ -278,11 +279,14 @@ Projeto Laravel Sail: a suite roda **dentro do container** (`vendor/bin/sail tes
 
 Durante cada sessão, o ralph exporta `RALPH_ENGINE`, `RALPH_PHASE_TITLE`, `RALPH_PHASE_NUM`, `RALPH_PHASE_TOTAL`, `RALPH_PHASE_ATTEMPT` e `RALPH_PHASE_MAX_ATTEMPTS` — úteis para hooks de notificação (ex.: n8n).
 
+### Isolamento da sessão (engine claude)
+
 No engine claude, toda sessão (implementação, verificador e decisão da rota) roda isolada da sua config de usuário. O ralph passa `--setting-sources project,local --strict-mcp-config`, e também `--mcp-config .mcp.json` quando a raiz do projeto tem um. Plugins, servidores MCP, hooks, settings e o `CLAUDE.md` do seu `~/.claude/` não carregam. O `CLAUDE.md` e o `.claude/settings*.json` do projeto continuam valendo. O hook `sail-guard` do próprio bc-harness continua rodando: quando o `sail-guard.sh` está ao lado do `ralph.sh`, o ralph passa ele com `--settings`. A sessão abre mais rápido, leva bem menos definições de ferramenta e não segue regras pessoais que não são do projeto. Cuidados:
 
 - As sessões rodam com `--dangerously-skip-permissions`. Um hook de proteção que mora só no `~/.claude/settings.json` deixa de valer: mova para o `.claude/settings.json` do projeto. Vale o mesmo para hooks de notificação.
 - Uma fase que precisa de um servidor MCP (um navegador, por exemplo) precisa dele no `.mcp.json` do projeto.
 - Um plugin instalado de forma global carrega quando o projeto ativa ele no `.claude/settings.json` (`"enabledPlugins": {"nome@marketplace": true}`).
+- O `.claude/skills/` e o `.claude/commands/` do projeto carregam, e também as skills, os comandos e os agentes de um plugin que o projeto ativa. As skills do `~/.claude/skills/` não.
 - O servidor MCP de um plugin fica de fora mesmo assim: o `--strict-mcp-config` corta ele. Copie cada servidor do `.mcp.json` do plugin para dentro de `mcpServers` no `.mcp.json` do projeto, e troque `${CLAUDE_PLUGIN_ROOT}` pelo caminho onde o plugin está instalado.
 - O `env` e o `apiKeyHelper` do `~/.claude/settings.json` também não valem. Se você chega na API por eles (um gateway, Bedrock, Vertex), exporte as variáveis no shell ou use `RALPH_ISOLATE=0`.
 - `RALPH_ISOLATE=0` carrega tudo, como antes.
