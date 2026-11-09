@@ -4,6 +4,10 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The install instructions in both READMEs and the Codex manifest's `homepage` and `repository` point to this fork, `wisleyaguiar/aguiarweb-harness`, where the releases are. They pointed to `beerandcodeteam/beer-and-code-harness`, which has no release. Claude Code installs through `/plugin marketplace add` first: the `/plugin install bc-harness` the README showed found no marketplace. The READMEs now say the project is a fork.
+
 ## [0.9.0] - 2026-11-09
 
 ### Changed

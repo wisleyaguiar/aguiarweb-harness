@@ -2,6 +2,8 @@
 
 > 🇧🇷 [Documentação em português](README.pt-BR.md)
 
+> Fork of [beerandcodeteam/beer-and-code-harness](https://github.com/beerandcodeteam/beer-and-code-harness). Releases (`bc-harness--v*` tags) are published here, in [wisleyaguiar/aguiarweb-harness](https://github.com/wisleyaguiar/aguiarweb-harness); the original repository has no release tags.
+
 A plugin for [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://developers.openai.com/codex/), and [Google Antigravity](https://antigravity.google/) with commands, skills, agents, and scripts that take a project from idea to implementation in a structured way: formal specification, phased planning, and autonomous execution with mechanical validation — while keeping a human in control at every decision point.
 
 The harness is **stack-agnostic**: language, framework, commands, and conventions are defined by the project's own documents (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, the `.spec/` chain), never by the harness.
@@ -42,11 +44,14 @@ After a run: **`/retro`** reads what `ralph.sh` left in `.phases/` and ranks the
 
 ### Claude Code
 
-Install from the Claude marketplace or a local path:
+Add this repository as a marketplace, then install the plugin:
 
 ```
-/plugin install bc-harness
+/plugin marketplace add wisleyaguiar/aguiarweb-harness
+/plugin install bc-harness@beer-and-code
 ```
+
+From a local clone, pass its path to `/plugin marketplace add` instead.
 
 Commands are namespaced: `/bc-harness:init`, `/bc-harness:plan`, etc. (abbreviated without the namespace throughout this document).
 
@@ -55,7 +60,7 @@ Commands are namespaced: `/bc-harness:init`, `/bc-harness:plan`, etc. (abbreviat
 Add the Git marketplace and install the plugin:
 
 ```bash
-codex plugin marketplace add beerandcodeteam/beer-and-code-harness --ref main
+codex plugin marketplace add wisleyaguiar/aguiarweb-harness --ref main
 codex plugin add bc-harness@beer-and-code
 ```
 
@@ -66,8 +71,8 @@ Start a new Codex conversation after installation. Open `/hooks` once to review 
 Install from a local clone (CLI) or drop the folder into `.agents/plugins/` (workspace) or `~/.gemini/config/plugins/` (global):
 
 ```bash
-git clone https://github.com/beerandcodeteam/beer-and-code-harness.git
-agy plugin install ./beer-and-code-harness
+git clone https://github.com/wisleyaguiar/aguiarweb-harness.git
+agy plugin install ./aguiarweb-harness
 ```
 
 The root `plugin.json` and `hooks.json` are the Antigravity manifest and hooks; the same `skills/` and `agents/` are loaded, and `sail-guard` runs on `run_command`. Skills have the same names as the Codex column below, with the plugin prefix: `/bc-harness:bc-harness-plan`.
