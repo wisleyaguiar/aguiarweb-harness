@@ -87,7 +87,13 @@ Present `summary`, the ACs (drafted ones flagged), `slug`, and `tier` with the s
 
 ### 4 — Architecture gate
 
-1. `AGENTS.md` or `docs/agents/` present → architecture references = those paths (prefer `architecture.md` + `domain_rules.md`).
+1. `AGENTS.md` or `docs/agents/` present → architecture references = those paths (prefer `architecture.md` + `domain_rules.md`). Then run the snippet below. Output → show `ralph commits since the context tree was last committed:`, the subjects it printed, and `— re-run /ai-context if any changed architecture, rules, or contracts`; continue, never block. No output → no warning (no git, tree never committed, no ralph commit since, or uncommitted edits to the tree).
+
+   ```bash
+   # up to 5 ralph commit subjects (feat|wip(phase-N)) not yet seen by the last commit touching the tree
+   base=$(git log -1 --format=%H -- AGENTS.md docs/agents 2>/dev/null); dirty=$(git status --porcelain -- AGENTS.md docs/agents 2>/dev/null)
+   [ -n "$base" ] && [ -z "$dirty" ] && git log --format=%s -E --grep='^(feat|wip)\(phase-' "$base"..HEAD 2>/dev/null | head -5 || true
+   ```
 2. Absent but `.github/copilot-instructions.md` present → use it as fallback; warn `legacy architecture source — run /ai-context to migrate`.
 3. Neither → AskUserQuestion: "AGENTS context tree not found. Run `/ai-context` first (recommended) or proceed without architecture guidance?" Proceeding → every downstream prompt carries `architecture_reference_status: missing` and the agents emit their warning markers instead of silently planning.
 

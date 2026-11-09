@@ -93,7 +93,7 @@ Format constraints (ralph's `split_phases` dictates them):
 
 - Prefer small, testable tasks over broad refactors when scope is uncertain. Phases stay few: split only by Workflow step 4.
 - Prioritize risk control for auth, data, infrastructure, and migration changes.
-- Distinguish confirmed facts from assumptions (`[UNVERIFIED]` marker) and inferred behavior.
+- Distinguish confirmed facts from assumptions (`[UNVERIFIED]` marker) and inferred behavior. A `domain_rules.md` rule whose heading ends in `(inferida)` is an assumption: confirm it in the code a task touches, or list it under `## Assumptions` with `[UNVERIFIED]`.
 - Tests absent for changed behavior → dedicated testing task.
 - **Reuse before creating**: before a task creates a module, helper, service, or component, Grep/Glob for one that already does the job. Found → the task modifies or calls it. Still creating one → say why under `## Assumptions`.
 - **Leave no decision to the implementer**: each ralph phase runs in a fresh session with only the project docs, the init chain, SPEC, PLAN, and the phase text. A task must not make that session choose a schema, an API path or signature, a dependency, or how to handle an edge case or error. Settle it in the task from the SPEC, the architecture, or the code; nothing settles it → `## Open Questions`.
