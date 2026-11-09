@@ -269,8 +269,18 @@ Laravel Sail projects: the suite runs **inside the container** (`vendor/bin/sail
 | `RALPH_ROUTE_KEY` | API key, required with `RALPH_ROUTE_API`. ralph removes it from the environment, so the engine sessions never see it |
 | `RALPH_ROUTE_URL` | API endpoint (default per API; `https://` only) |
 | `RALPH_ROUTE_MODEL` | The model that decides: `haiku` on claude; `gpt-6-luna` (openai) or `jev-latest` (jev) on the API |
+| `RALPH_ISOLATE` | Claude only. `1` (default): sessions skip your `~/.claude/` config (see below). `0`: load it, as before |
 
 During each session, ralph exports `RALPH_ENGINE`, `RALPH_PHASE_TITLE`, `RALPH_PHASE_NUM`, `RALPH_PHASE_TOTAL`, `RALPH_PHASE_ATTEMPT`, and `RALPH_PHASE_MAX_ATTEMPTS` — useful for notification hooks (e.g. n8n).
+
+With the claude engine, every session (implementation, verifier, and route decision) runs isolated from your user config. ralph passes `--setting-sources project,local --strict-mcp-config`, plus `--mcp-config .mcp.json` when the project root has one. Your `~/.claude/` plugins, MCP servers, hooks, settings, and `CLAUDE.md` don't load. The project's `CLAUDE.md` and `.claude/settings*.json` still do. bc-harness's own `sail-guard` hook still runs: when `sail-guard.sh` sits next to `ralph.sh`, ralph passes it with `--settings`. Sessions start faster, carry far fewer tool definitions, and don't follow personal rules that aren't the project's. What to watch:
+
+- Sessions run with `--dangerously-skip-permissions`. A guard hook that lives only in `~/.claude/settings.json` no longer applies: move it to the project's `.claude/settings.json`. The same goes for notification hooks.
+- A phase that needs an MCP server (a browser, for example) needs it in the project's `.mcp.json`.
+- A plugin you installed globally loads when the project enables it in `.claude/settings.json` (`"enabledPlugins": {"name@marketplace": true}`).
+- A plugin's MCP server stays out even then: `--strict-mcp-config` drops it. Copy each server entry from the plugin's `.mcp.json` into `mcpServers` in the project's `.mcp.json`, and replace `${CLAUDE_PLUGIN_ROOT}` with the plugin's installed path.
+- `env` and `apiKeyHelper` in `~/.claude/settings.json` don't apply either. If you reach the API through them (a gateway, Bedrock, Vertex), export the variables in your shell or use `RALPH_ISOLATE=0`.
+- `RALPH_ISOLATE=0` loads everything, as before.
 
 ### Model and effort per phase (claude engine)
 

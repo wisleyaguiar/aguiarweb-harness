@@ -128,6 +128,11 @@
 #                            pela OpenRouter: https://openrouter.ai/api/v1/systemone
 #   RALPH_ROUTE_MODEL        modelo de quem decide: haiku no claude; gpt-6-luna
 #                            (openai) ou jev-latest (jev) na API
+#   RALPH_ISOLATE            so claude. 1 (default): a sessao nao le o
+#                            ~/.claude do usuario (plugins, MCP, hooks,
+#                            settings, CLAUDE.md); vale so a config do
+#                            projeto, o .mcp.json da raiz quando existe e o
+#                            sail-guard.sh ao lado deste script. 0: le tudo
 #   RALPH_MAX_CYCLES         ciclos de correcao por fase (default: 3)
 #   RALPH_MAX_LIMIT_WAITS    esperas consecutivas por limite, por fase (default: 20)
 #   RALPH_LIMIT_WAIT_DEFAULT fallback de espera em segundos (default: 1800)
@@ -1896,6 +1901,20 @@ run_engine() {
     [ -n "$R_MODEL" ] && route_args+=(--model "$R_MODEL")
     [ -n "$R_EFFORT" ] && route_args+=(--effort "$R_EFFORT")
   fi
+  # Sessao claude isolada do ~/.claude do usuario: sem plugins, MCP, hooks e
+  # CLAUDE.md de usuario (centenas de ferramentas e regras que nao sao do
+  # projeto). O CLAUDE.md e o .claude/settings*.json do projeto continuam.
+  # Checado a cada sessao: uma fase pode criar o .mcp.json.
+  local iso_args=()
+  if [ "${RALPH_ISOLATE:-1}" != "0" ]; then
+    iso_args=(--setting-sources "project,local" --strict-mcp-config)
+    [ -f .mcp.json ] && iso_args+=(--mcp-config .mcp.json)
+    # O hook sail-guard do bc-harness vem do plugin, que o isolamento corta:
+    # volta por --settings quando o script esta ao lado deste.
+    local guard
+    guard="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sail-guard.sh"
+    [ -x "$guard" ] && iso_args+=(--settings "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"\\\"$(json_escape "$guard")\\\"\"}]}]}}")
+  fi
 
   while true; do
     local rc=0
@@ -1922,12 +1941,14 @@ run_engine() {
         # Decisao da rota: o prompt vai pelo stdin (todas as fases juntas
         # passariam do limite de 128 KB por argumento do Linux) e a resposta e
         # o JSON de resultado com structured_output.
-        env -u CLAUDECODE claude -p --model "$ROUTE_DECIDER" --effort low \
+        env -u CLAUDECODE claude -p ${iso_args[@]+"${iso_args[@]}"} \
+          --model "$ROUTE_DECIDER" --effort low \
           --allowedTools "Read,Glob,Grep" \
           --output-format json --json-schema "$ROUTE_SCHEMA" \
           < "$prompt_file" > "$log_file" 2>&1 || rc=$?
       elif [[ "$mode" == "verify" ]]; then
         env -u CLAUDECODE claude --dangerously-skip-permissions \
+          ${iso_args[@]+"${iso_args[@]}"} \
           ${model_args[@]+"${model_args[@]}"} \
           -p "$(cat "$prompt_file")" \
           --allowedTools "Read,Glob,Grep" \
@@ -1940,6 +1961,7 @@ run_engine() {
         local quiet=0
         $DASHBOARD && quiet=1
         if env -u CLAUDECODE claude --dangerously-skip-permissions \
+             ${iso_args[@]+"${iso_args[@]}"} \
              ${route_args[@]+"${route_args[@]}"} \
              -p "$(cat "$prompt_file")" \
              --output-format stream-json --verbose < /dev/null 2>&1 \

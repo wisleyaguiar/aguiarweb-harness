@@ -73,6 +73,7 @@ outfmt=""
 schema=""
 route=0
 stdin_txt=""
+iso=""
 
 if [ "$name" = "claude" ]; then
   # --json-schema = chamada do decisor da rota: -p sem argumento, prompt no stdin.
@@ -88,9 +89,16 @@ if [ "$name" = "claude" ]; then
       --effort) effort="$2"; shift 2 ;;
       --json-schema) schema="$2"; shift 2 ;;
       --output-format) outfmt="$2"; shift 2 ;;
+      --setting-sources) iso+="ss=$2 "; shift 2 ;;
+      --strict-mcp-config) iso+="strict "; shift ;;
+      --mcp-config) iso+="mcp=$2 "; shift 2 ;;
+      --settings) iso+="settings "; printf '%s' "$2" > "$state/claude_settings"; shift 2 ;;
       *) shift ;;
     esac
   done
+  # Uma linha por chamada: "<route|verify|impl> <flags de isolamento>".
+  kind=impl; [ "$verify" -eq 1 ] && kind=verify; [ "$route" -eq 1 ] && kind=route
+  echo "$kind ${iso:-none}" >> "$state/claude_iso"
 elif [ "$name" = "agy" ]; then
   # agy -p: mesmo risco de stdin do claude -p.
   [ -t 0 ] || cat > /dev/null
@@ -496,6 +504,7 @@ run_ralph() {
     RALPH_ROUTE_KEY="${CASE_ROUTE_KEY:-}" \
     RALPH_ROUTE_URL="${CASE_ROUTE_URL:-}" \
     RALPH_ROUTE_MODEL="" \
+    RALPH_ISOLATE="${CASE_ISOLATE:-}" \
     MOCK_ROUTE="${CASE_MOCK_ROUTE:-ok}" \
     MOCK_API="${CASE_MOCK_API:-ok}" \
       bash "$RALPH" "$@" > "$dir/out.log" 2>&1
@@ -1938,6 +1947,37 @@ if case_enabled verify-regression; then
   assert_not_contains "$p.cycle-2.txt" "Regressao" "ciclo 2 sem aviso: nada que estava DONE caiu"
   assert_contains "$p.cycle-3.txt" "Regressao: a task 1 estava DONE no ciclo 1" "ciclo 3 avisa que a correcao quebrou a task 1"
   assert_not_contains "$p.cycle-3.txt" "a task 2 estava DONE" "so a task regredida entra no aviso"
+fi
+
+# ---------------------------------------------------------------------------
+# 51. Engine claude isolado do ~/.claude do usuario em toda chamada (rota,
+#     implementacao, verificador); .mcp.json do projeto entra; RALPH_ISOLATE=0
+#     desliga.
+# ---------------------------------------------------------------------------
+if case_enabled claude-isolate; then
+  header "51. sessoes claude isoladas da config do usuario"
+  d=$(new_case claude-isolate)
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  f="$d/state/claude_iso"
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq 1 "$(grep -c '^route ' "$f")" "rota chamada uma vez"
+  assert_eq 2 "$(grep -c '^impl ' "$f")" "implementacao chamada por fase"
+  assert_eq 2 "$(grep -c '^verify ' "$f")" "verificador chamado por fase"
+  assert_eq 0 "$(grep -vc ' ss=project,local strict settings $' "$f")" "toda chamada com --setting-sources project,local --strict-mcp-config e o sail-guard"
+  assert_eq '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"\"'"$ROOT"'/scripts/sail-guard.sh\""}]}]}}' \
+    "$(cat "$d/state/claude_settings")" "--settings registra o sail-guard ao lado do ralph.sh"
+
+  d=$(new_case claude-isolate-mcp)
+  echo '{"mcpServers":{}}' > "$d/repo/.mcp.json"
+  git -C "$d/repo" add -A && git -C "$d/repo" commit -q -m "chore: mcp"
+  run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  f="$d/state/claude_iso"
+  assert_eq 0 "$(grep -vc ' ss=project,local strict mcp=.mcp.json settings $' "$f")" "com .mcp.json: toda chamada passa --mcp-config .mcp.json"
+
+  d=$(new_case claude-isolate-off)
+  CASE_ISOLATE=0 run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  f="$d/state/claude_iso"
+  assert_eq 5 "$(grep -c ' none$' "$f")" "RALPH_ISOLATE=0: nenhuma flag de isolamento"
 fi
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,10 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- `ralph.sh` (claude engine): every session runs isolated from the user's `~/.claude/` config, with `--setting-sources project,local --strict-mcp-config`, plus `--mcp-config .mcp.json` when the project root has one. User plugins, MCP servers, hooks, settings (including `env` and `apiKeyHelper`), and `CLAUDE.md` no longer load. The project's `CLAUDE.md` and `.claude/settings*.json` still do, and bc-harness's `sail-guard` hook comes back through `--settings` when `sail-guard.sh` sits next to `ralph.sh`. A session goes from 676 tools and 29 MCP servers (#13) to 25 and 0 (live probe), and a user rule that called `advisor` no longer applies. Guard or notification hooks that live only in `~/.claude/settings.json` stop applying: move them to the project's `.claude/settings.json`, or set `RALPH_ISOLATE=0` to load everything as before.
+
 ## [0.8.0] - 2026-11-04
 
 ### Added
