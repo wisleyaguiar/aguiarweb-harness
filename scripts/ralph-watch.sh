@@ -53,8 +53,8 @@
 # live.tsv tem precedencia sobre run.tsv para as tasks da fase corrente.
 #
 # Vocabulario de status:
-#   fase  pending | running | done | failed | skipped
-#   task  pending | running | done | incomplete
+#   fase  pending | running | done | failed | blocked | skipped
+#   task  pending | running | done | incomplete | blocked
 #   gate  pending | run | pass | fail | skip
 
 set -uo pipefail
@@ -180,7 +180,7 @@ read_state() {
           if [ -n "$LIVE_PHASE" ] && [ -n "${TK_STATUS[$LIVE_PHASE*1000+$a]+x}" ]; then
             # nao rebaixa uma task ja confirmada pelo verificador (gate 3)
             case "${TK_STATUS[$LIVE_PHASE*1000+$a]}" in
-              done|incomplete) ;;
+              done|incomplete|blocked) ;;
               *) TK_STATUS[$LIVE_PHASE*1000+$a]="$b" ;;
             esac
           fi
@@ -269,6 +269,7 @@ status_label() {
     running)    printf '%s▶ Em execução%s' "$C_YELLOW" "$C_RESET" ;;
     failed)     printf '%s✗ Falhou%s'      "$C_RED"    "$C_RESET" ;;
     incomplete) printf '%s! Incompleta%s'  "$C_RED"    "$C_RESET" ;;
+    blocked)    printf '%s⊗ Bloqueada%s'   "$C_RED"    "$C_RESET" ;;
     skipped)    printf '%s– Pulada%s'      "$C_GREY"   "$C_RESET" ;;
     *)          printf '%s· Pendente%s'    "$C_GREY"   "$C_RESET" ;;
   esac
@@ -280,6 +281,7 @@ status_plain() {
     running)    printf '▶ Em execução' ;;
     failed)     printf '✗ Falhou' ;;
     incomplete) printf '! Incompleta' ;;
+    blocked)    printf '⊗ Bloqueada' ;;
     skipped)    printf '– Pulada' ;;
     *)          printf '· Pendente' ;;
   esac
@@ -302,14 +304,14 @@ gate_mark_plain() {
   esac
 }
 
-# Rotulos memoizados. O vocabulario e fechado (6 status, 5 marcas de gate), e as
+# Rotulos memoizados. O vocabulario e fechado (7 status, 5 marcas de gate), e as
 # funcoes acima continuam sendo a unica fonte de verdade: a tabela e derivada
 # delas uma vez no startup, entao mudar um rotulo continua sendo mexer em um
 # lugar so. Quem monta linha le da tabela e nao paga fork nenhum. Cada tabela e
 # um grupo de variaveis (ST_LABEL_done, GM_PLAIN_pass...): Bash 3.2 nao tem -A.
 init_labels() {
   local s
-  for s in "done" running failed incomplete skipped pending; do
+  for s in "done" running failed incomplete blocked skipped pending; do
     printf -v "ST_LABEL_$s" '%s' "$(status_label "$s")"
     printf -v "ST_PLAIN_$s" '%s' "$(status_plain "$s")"
   done

@@ -184,6 +184,7 @@ Reads what the last `ralph.sh` run left on disk — `.phases/state/run.tsv`, the
 
 | Signal | Proposed change |
 |---|---|
+| Phase `blocked` (`TASK <n>: BLOCKED`) | Rewrite the acceptance criterion the verifier quoted; a fix cycle or a stronger model cannot pass it |
 | Phase failed or committed as `wip(phase-N)` | The tasks still open, first in the list |
 | Gate 2 skipped (no test command) | Set `test_cmd` in the Stack Profile or pass `--test-cmd` |
 | A task stays `INCOMPLETE` across cycles | Split the phase or sharpen the task |
@@ -228,9 +229,9 @@ With no argument, the input resolves in this order: `.spec/init/project-phases.m
 | 0 | Did the engine actually finish? | claude: `is_error` in the result JSON; agy: `status` in the JSON output; codex: exit code |
 | 1 | Did the session write code? | Tree signature before/after. **A signal, not a verdict** — an already-implemented phase makes the engine (correctly) write nothing; the signal feeds the fix-cycle cause |
 | 2 | Does the test suite pass? | Run **by ralph itself**, outside the agent session — the agent cannot "fake green" |
-| 3 | Is each task actually in the code? | Independent read-only verifier session that emits `TASK <n>: DONE/INCOMPLETE` per task. Runs on every phase by default (`RALPH_VERIFY=always`); on the claude engine it uses a cheap model (`sonnet`). It also emits `SCOPE` (files no task asks for) and `STANDARDS` (`AGENTS.md`/`CLAUDE.md` rules) lines: a `WARN` shows up in the log and never fails the phase |
+| 3 | Is each task actually in the code? | Independent read-only verifier session that emits `TASK <n>: DONE/INCOMPLETE/BLOCKED` per task. Runs on every phase by default (`RALPH_VERIFY=always`); on the claude engine it uses a cheap model (`sonnet`). It also emits `SCOPE` (files no task asks for) and `STANDARDS` (`AGENTS.md`/`CLAUDE.md` rules) lines: a `WARN` shows up in the log. From cycle 2 on, `SCOPE: WARN` fails the gate: any file the phase changed that no task names, even one cycle 1 changed. `BLOCKED` means the acceptance criterion contradicts the requirement: the phase ends as `blocked` with no fix cycle, and you fix the criterion in the phase document |
 
-Any red gate → **fix cycle**: a fresh session receives the full phase + the real failure cause (never a generic "tests failed"). When gate 3 fails a task it passed in an earlier cycle, the cause says the last fix broke it. Default: 3 cycles per phase.
+Any red gate → **fix cycle**: a fresh session receives the full phase + the real failure cause (never a generic "tests failed"). When gate 3 fails a task it passed in an earlier cycle, the cause says the last fix broke it. When the tasks list files under `Arquivos:`, the fix session may touch only those, plus the tests they require. Gate 3 `BLOCKED` is the exception: the phase ends with no fix cycle. Default: 3 cycles per phase.
 
 Green gates with a clean tree → the phase was already implemented at HEAD: marked done, no commit.
 
@@ -361,7 +362,7 @@ The session runs with `--output-format stream-json`, which emits events line by 
 3. **Observational fallback** — with no marker and no list, ralph infers from what the agent edits. A `/plan` plan declares `Arquivos:` on every item, and it is that match (edited path ↔ file declared by the task) that provides the granularity; without the declaration it falls back to the task's own text. On entering a task the earlier ones count as done — the agent works in order, and not every task has a file of its own.
 4. **Sign of life**: as soon as the session opens, task 1 shows as running — never a whole phase frozen at "Pendente".
 
-At the end of the phase, **gate 3 has the last word**: the verifier's `TASK <n>: DONE/INCOMPLETE` verdict overrides marker, list and inference alike. A task marked done but not in the code shows up as `! Incompleta`.
+At the end of the phase, **gate 3 has the last word**: the verifier's `TASK <n>: DONE/INCOMPLETE/BLOCKED` verdict overrides marker, list and inference alike. A task marked done but not in the code shows up as `! Incompleta`.
 
 So: during the phase the panel shows the agent's intent; at the end of the phase it shows the verified truth.
 

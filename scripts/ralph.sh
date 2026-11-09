@@ -90,7 +90,10 @@
 #      claude o verificador usa um modelo barato (RALPH_VERIFY_MODEL, default:
 #      sonnet) — e leitura + checklist. No engine agy o verificador roda numa
 #      worktree descartavel (o agy nao tem modo read-only por invocacao).
-#      Tambem julga escopo e padroes (SCOPE/STANDARDS): so aviso, nao reprova.
+#      Tambem julga escopo e padroes (SCOPE/STANDARDS): aviso no ciclo 1; do
+#      ciclo 2 em diante SCOPE: WARN reprova (a correcao saiu do escopo).
+#      TASK <n>: BLOCKED (criterio contradiz o requisito) encerra a fase como
+#      `blocked`, sem ciclo de correcao: so o documento da fase resolve.
 #
 # Gates verdes com a arvore limpa => a fase ja estava implementada em HEAD:
 # marcada como feita, sem commit (nao ha o que commitar).
@@ -1010,8 +1013,9 @@ state_tasks_from_verify() {
     case "$verdict" in
       DONE)       task_status_set "$num" "$n" "done" ;;
       INCOMPLETE) task_status_set "$num" "$n" incomplete ;;
+      BLOCKED)    task_status_set "$num" "$n" blocked ;;
     esac
-  done < <(sed 's/^[[:space:]]*//' "$verify_log" | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE)' || true)
+  done < <(sed 's/^[[:space:]]*//' "$verify_log" | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE|BLOCKED)' || true)
   state_flush
 }
 
@@ -1416,6 +1420,10 @@ antes de mudar qualquer coisa.
 
 ## Regras obrigatorias
 - Corrija APENAS o que falta. Nao reimplemente o que ja esta correto e testado.
+- Altere so os arquivos que as tasks da fase pedem (linhas `Arquivos:`, quando
+  houver) e os testes, fixtures ou migrations que elas exigem. Nunca mexa em
+  outro arquivo so para um criterio passar: se ele so passa assim, deixe como
+  esta e diga isso no fim do turno.
 - Nao deixe TODOs, placeholders ou testes pulados.
 - Rode a suite de testes do projeto ao final e garanta que ela passa.
 INTRO
@@ -1453,12 +1461,19 @@ testes, rotas, migrations — o que a task exigir) e emita EXATAMENTE UMA linha:
 
 TASK <n>: DONE
 TASK <n>: INCOMPLETE — <o que falta>
+TASK <n>: BLOCKED — <criterio> contradiz <requisito>
 
 Regras:
 - <n> e o indice da task na fase, comecando em 1.
 - Uma linha TASK para cada task, sem excecao, sem agrupar.
 - Nao emita nenhum outro texto alem das linhas SCOPE, STANDARDS e TASK.
 - Codigo ausente, TODO, placeholder ou teste faltando => INCOMPLETE.
+- BLOCKED e a excecao: o criterio, como esta escrito, nao pode ser cumprido sem
+  violar o requisito da propria task, outra task da fase ou a spec, ou sem
+  mexer em arquivo que nenhuma task pede (ex.: pede `>` entre blocos que se
+  tocam, onde o certo e `>=`). Cite o criterio e o que ele contradiz. BLOCKED
+  encerra a fase sem correcao. Se um codigo nos arquivos das tasks cumpriria o
+  criterio sem violar nada, e INCOMPLETE.
 - Na duvida, INCOMPLETE.
 
 Antes das linhas TASK, julgue mais dois eixos e emita EXATAMENTE UMA linha de
@@ -1468,7 +1483,8 @@ cada, no formato `SCOPE: OK` ou `SCOPE: WARN — <motivo>` (idem para STANDARDS)
   exigido por uma task esta no escopo.
 - STANDARDS: confira os arquivos alterados contra as convencoes do AGENTS.md ou
   CLAUDE.md do projeto. WARN cita a regra e o arquivo. Sem esses arquivos, OK.
-- Esses eixos sao so aviso para o operador: nunca mudam o veredito das tasks.
+- Esses eixos nunca mudam o veredito das tasks. O ralph trata SCOPE: WARN
+  como reprovacao a partir do ciclo 2; o resto e aviso para o operador.
 
 Execucao (headless — leia com atencao):
 - Voce roda em sessao nao-interativa: o processo MORRE quando este turno acaba.
@@ -2124,7 +2140,9 @@ gate2_tests_pass() {
 #   - ciclo de correcao (a fase ja reprovou uma vez)
 #   - gate 2 desabilitado (sem suite, o verificador e o unico gate)
 # GATE3_RAN diz ao caminho "ja implementada" quais gates de fato validaram HEAD.
+# GATE3_BLOCKED: o verificador deu BLOCKED; a fase acaba sem ciclo de correcao.
 GATE3_RAN=0
+GATE3_BLOCKED=0
 
 # verify_regressions <phase_file> <ciclo> <linhas TASK n: INCOMPLETE>
 # Task INCOMPLETE agora que o verificador de um ciclo anterior deu DONE: a
@@ -2152,6 +2170,7 @@ gate3_independent_verify() {
   local verify_log="$LOG_DIR/${phase_file%.md}.verify-${cycle}.log"
 
   GATE3_RAN=0
+  GATE3_BLOCKED=0
 
   case "$VERIFY_MODE" in
     off)
@@ -2187,7 +2206,7 @@ gate3_independent_verify() {
   # cobertura estoura e reprova fase completa.
   local task_lines
   task_lines=$(sed 's/^[[:space:]]*//' "$verify_log" \
-    | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE)' \
+    | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE|BLOCKED)' \
     | awk '{ n = $2; sub(/:$/, "", n); verdict[n] = $0 }
            END { for (n in verdict) printf "%d\t%s\n", n, verdict[n] }' \
     | sort -n | cut -f2- || true)
@@ -2196,7 +2215,7 @@ gate3_independent_verify() {
   parsed=$(printf '%s' "$task_lines" | grep -c . || true)
 
   if [ "$parsed" -eq 0 ]; then
-    GATE_CAUSE="O verificador independente nao emitiu nenhuma linha 'TASK <n>: DONE|INCOMPLETE' — nao foi possivel confirmar que a fase esta completa. Ultimas linhas do verificador:"$'\n'"$(tail -n 40 "$verify_log")"
+    GATE_CAUSE="O verificador independente nao emitiu nenhuma linha 'TASK <n>: DONE|INCOMPLETE|BLOCKED' — nao foi possivel confirmar que a fase esta completa. Ultimas linhas do verificador:"$'\n'"$(tail -n 40 "$verify_log")"
     return 1
   fi
 
@@ -2204,6 +2223,29 @@ gate3_independent_verify() {
     GATE_CAUSE="O verificador cobriu $parsed de $expected tasks — cobertura incompleta. Linhas emitidas:"$'\n'"$task_lines"
     return 1
   fi
+
+  # Criterio que contradiz o requisito: outro ciclo so tentaria contornar o
+  # criterio (fora do escopo, ou num modelo mais caro). Quem corrige e o plano.
+  local blocked
+  blocked=$(printf '%s\n' "$task_lines" | grep -E '^TASK [0-9]+: BLOCKED' || true)
+  if [ -n "$blocked" ]; then
+    GATE3_BLOCKED=1
+    GATE_CAUSE="O verificador independente achou criterios que contradizem o requisito:"$'\n'"$blocked"
+    return 1
+  fi
+
+  # SCOPE/STANDARDS: mesmo eco do codex das TASK, o ultimo vence. Do ciclo 2 em
+  # diante SCOPE: WARN reprova: a correcao mexeu onde nenhuma task pede.
+  local axes scope_fail=""
+  axes=$(sed 's/^[[:space:]]*//' "$verify_log" \
+    | grep -E '^(SCOPE|STANDARDS): (OK|WARN)' \
+    | awk '{ last[$1] = $0 } END { for (a in last) print last[a] }' \
+    | grep -E '^[A-Z]+: WARN' | sort || true)
+  if [ "$cycle" -ge 2 ]; then
+    scope_fail=$(printf '%s\n' "$axes" | grep '^SCOPE: WARN' || true)
+    axes=$(printf '%s\n' "$axes" | grep -v '^SCOPE: WARN' || true)
+  fi
+  [ -n "$scope_fail" ] && scope_fail="Fora do escopo da fase (do ciclo 2 em diante reprova): desfaca a mudanca no arquivo que nenhuma task pede."$'\n'"$scope_fail"
 
   local incomplete
   incomplete=$(printf '%s\n' "$task_lines" | grep 'INCOMPLETE' || true)
@@ -2213,15 +2255,14 @@ gate3_independent_verify() {
     local regressions
     regressions=$(verify_regressions "$phase_file" "$cycle" "$incomplete")
     [ -n "$regressions" ] && GATE_CAUSE+=$'\n\n'"$regressions"
+    [ -n "$scope_fail" ] && GATE_CAUSE+=$'\n\n'"$scope_fail"
     return 1
   fi
 
-  # SCOPE/STANDARDS sao so aviso. Mesmo eco do codex das TASK: o ultimo vence.
-  local axes
-  axes=$(sed 's/^[[:space:]]*//' "$verify_log" \
-    | grep -E '^(SCOPE|STANDARDS): (OK|WARN)' \
-    | awk '{ last[$1] = $0 } END { for (a in last) print last[a] }' \
-    | grep -E '^[A-Z]+: WARN' | sort || true)
+  if [ -n "$scope_fail" ]; then
+    GATE_CAUSE="$scope_fail"
+    return 1
+  fi
 
   success "Gate 3 — $parsed/$expected tasks confirmadas no codigo"
   if [ -n "$axes" ]; then
@@ -2266,6 +2307,7 @@ run_phase() {
 
   LIMIT_WAITS=0
   GATE_CAUSE=""
+  GATE3_BLOCKED=0
 
   echo ""
   log "[$seq/$total] Phase $phase_num: $phase_title"
@@ -2340,8 +2382,13 @@ run_phase() {
           state_gate "$phase_num" 3 fail
           LAST_GATE="gate 3 — verificacao independente"
           GATE_CAUSE="${no_change_note}${GATE_CAUSE}"
-          fail "Gate 3 vermelho — implementacao incompleta"
-          gate_verdict="red"
+          if [ "$GATE3_BLOCKED" -eq 1 ]; then
+            fail "Gate 3 vermelho — criterio contradiz o requisito"
+            gate_verdict="blocked"
+          else
+            fail "Gate 3 vermelho — implementacao incompleta"
+            gate_verdict="red"
+          fi
         else
           state_tasks_from_verify "$phase_num" "$verify_log"
           if [ "$GATE3_RAN" -eq 1 ]; then state_gate "$phase_num" 3 pass
@@ -2350,8 +2397,9 @@ run_phase() {
       fi
     fi
 
-    if [ "$gate_verdict" = "red" ]; then
+    if [ "$gate_verdict" != "green" ]; then
       state_meta last_error "$(printf '%s' "$GATE_CAUSE" | head -n 1 | cut -c1-70)"
+      [ "$gate_verdict" = "blocked" ] && break
     else
       local phase_duration=$(($(date +%s) - phase_start))
 
@@ -2384,8 +2432,13 @@ run_phase() {
   done
 
   local phase_duration=$(($(date +%s) - phase_start))
-  state_phase_end "$phase_num" failed
-  fail "Phase $phase_num: $phase_title — FALHOU apos $MAX_CYCLES ciclos ($(format_duration "$phase_duration"))"
+  if [ "$GATE3_BLOCKED" -eq 1 ]; then
+    state_phase_end "$phase_num" blocked
+    fail "Phase $phase_num: $phase_title — BLOQUEADA no ciclo $cycle ($(format_duration "$phase_duration")): criterio contradiz o requisito. Corrija o criterio no documento da fase e rode de novo."
+  else
+    state_phase_end "$phase_num" failed
+    fail "Phase $phase_num: $phase_title — FALHOU apos $MAX_CYCLES ciclos ($(format_duration "$phase_duration"))"
+  fi
   fail "Ultima causa ($LAST_GATE):"
   printf '%s\n' "$GATE_CAUSE" | head -n 20 | sed 's/^/    /'
   fail "Logs em: $LOG_DIR/${phase_file%.md}.*"

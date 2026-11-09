@@ -14,10 +14,10 @@ ralph deletes `.phases/` at the start of every run, so everything below belongs 
 
 | Source | What it holds |
 |---|---|
-| `.phases/state/run.tsv` | Tab-separated. `META <key> <value>` — `status`, `engine`, `input`, `test_cmd` (`—` = none resolved), `last_error`<br>`PHASE <n> <status> <attempt> <gates> <title>` — `<gates>` is 4 words, gates 0–3, each `pending`/`run`/`pass`/`fail`/`skip`, **last cycle only**<br>`TASK <phase> <i> <status> <title>`<br>`ROUTE <phase> <model> <effort> <source>` — claude engine only, **last cycle only**; `-` = engine default; source `flag`/`plano`/`engine`/`engine*`/`openai`/`jev`, or `ciclo` when a fix cycle stepped it up |
+| `.phases/state/run.tsv` | Tab-separated. `META <key> <value>` — `status`, `engine`, `input`, `test_cmd` (`—` = none resolved), `last_error`<br>`PHASE <n> <status> <attempt> <gates> <title>` — status `blocked` = gate 3 found a criterion that contradicts the requirement, and the phase ended with no fix cycle; `<gates>` is 4 words, gates 0–3, each `pending`/`run`/`pass`/`fail`/`skip`, **last cycle only**<br>`TASK <phase> <i> <status> <title>`<br>`ROUTE <phase> <model> <effort> <source>` — claude engine only, **last cycle only**; `-` = engine default; source `flag`/`plano`/`engine`/`engine*`/`openai`/`jev`, or `ciclo` when a fix cycle stepped it up |
 | `.phases/manifest.txt` | `<slug>.md\|<n>\|<title>` — maps a phase number to the `<slug>` the files below are named after |
 | `.phases/prompts/<slug>.cycle-<N>.txt`, N ≥ 2 | the fix prompt; its `## Motivo da falha (<gate>)` block is the real cause cycle N−1 failed |
-| `.phases/logs/<slug>.verify-<N>.log` | gate 3 verdicts: `TASK <n>: DONE`/`INCOMPLETE — …`, `SCOPE: OK`/`WARN — …`, `STANDARDS: OK`/`WARN — …`. Codex echoes them more than once; the last one wins |
+| `.phases/logs/<slug>.verify-<N>.log` | gate 3 verdicts: `TASK <n>: DONE`/`INCOMPLETE — …`/`BLOCKED — …`, `SCOPE: OK`/`WARN — …`, `STANDARDS: OK`/`WARN — …`. Codex echoes them more than once; the last one wins |
 | `.phases/logs/<slug>.test-<N>.log` | gate 2 output |
 | `.phases/logs/<slug>.cycle-<N>.log` | the engine session — large; grep it, read only the lines you need |
 | `git log --oneline --grep '^wip(phase-'` | phases committed incomplete under `--keep-going` |
@@ -40,11 +40,11 @@ awk '/^## Motivo da falha/{p=1; print "== " FILENAME} /^## Fase a completar/{p=0
 # the verifier can echo or revise a verdict: keep the last one per task and axis
 awk '{ sub(/^[ \t]+/, "") }
      /^(TASK [0-9]+|SCOPE|STANDARDS): / { last[FILENAME SUBSEP substr($0, 1, index($0, ":"))] = FILENAME ": " $0 }
-     END { for (k in last) if (last[k] ~ /: (INCOMPLETE|WARN)/) print last[k] }' .phases/logs/*.verify-*.log 2>/dev/null | sort
+     END { for (k in last) if (last[k] ~ /: (INCOMPLETE|BLOCKED|WARN)/) print last[k] }' .phases/logs/*.verify-*.log 2>/dev/null | sort
 git log --oneline --grep '^wip(phase-'
 ```
 
-A phase has friction when its attempt is above 1, its status is `failed`, a gate reads `fail`, a task is not `done`, or a verify log of it carries a `WARN`. Open the test log or grep the cycle log of that phase only when the cause above does not explain it.
+A phase has friction when its attempt is above 1, its status is `failed` or `blocked`, a gate reads `fail`, a task is not `done`, or a verify log of it carries a `WARN`. Open the test log or grep the cycle log of that phase only when the cause above does not explain it.
 
 Done when every phase with friction has its cause written down next to the source path it came from.
 
@@ -54,12 +54,13 @@ Turn each cause into one candidate. First match wins:
 
 | Signal | Candidate |
 |---|---|
+| Phase `blocked`, or `TASK <n>: BLOCKED` | The acceptance criterion contradicts the requirement, so no fix cycle or model could pass it. Rewrite the criterion the verifier quoted in the phase document, then re-run. Not a code or model problem. |
 | Phase `failed`, or a `wip(phase-N)` commit | Unfinished work. Name the tasks still open; they come first in the report. |
 | `test_cmd` is `—` (gate 2 `skip` on every phase) | No test command resolved, so gate 3 held the line alone. Set `test_cmd` in the Stack Profile of `.spec/init/project-description.md`, or pass `--test-cmd`. |
 | Gate 2 `fail` | Read the test log: a real bug the next cycle fixed, a flaky test, or a service, seed, or fixture the session could not reach (information access). |
 | `TASK <n>: INCOMPLETE` across cycles | The phase or task is too big or too vague. Split the phase (10–15 tasks, one session) or sharpen the task in the phase document. |
 | `STANDARDS: WARN` | A convention the implementer missed. A **mechanical** rule (banned API, import shape, file location, naming pattern) becomes a lint rule, hook, or test, which gate 2 then enforces on every phase. A **judgement** rule becomes one line in `AGENTS.md`/`CLAUDE.md`. |
-| `SCOPE: WARN` | The session touched files no task names: a task is missing from the phase document, or its wording is too loose. |
+| `SCOPE: WARN` | The session touched files no task names: a task is missing from the phase document, or its wording is too loose. From cycle 2 on it fails gate 3, even for a file cycle 1 changed. |
 | The cycle log shows the session searching for, or editing, the wrong files | A missing **navigation pointer**: add one line to `AGENTS.md` naming the file, or re-run `/ai-context`. |
 | Gate 0 `fail` | The engine crashed or hit a limit. Environment, not instructions: note it, lowest severity. |
 | `ROUTE … ciclo` on a phase that passed | The phase only passed after ralph stepped the model or effort up. Raise its `**Route:**` line in the phase document to the level that passed, so the next run starts there. |

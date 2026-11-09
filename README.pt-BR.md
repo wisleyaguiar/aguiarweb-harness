@@ -182,6 +182,7 @@ Lê o que o último run do `ralph.sh` deixou no disco — `.phases/state/run.tsv
 
 | Sinal | Mudança proposta |
 |---|---|
+| Fase `blocked` (`TASK <n>: BLOCKED`) | Reescrever o critério de aceite que o verificador citou; nem ciclo de correção nem modelo mais forte passa nele |
 | Fase falhou ou virou commit `wip(phase-N)` | As tasks ainda abertas, no topo da lista |
 | Gate 2 pulado (sem comando de teste) | Definir `test_cmd` no Stack Profile ou passar `--test-cmd` |
 | Uma task segue `INCOMPLETE` entre ciclos | Dividir a fase ou deixar a task mais precisa |
@@ -224,9 +225,9 @@ Sem argumento, resolve o input nesta ordem: `.spec/init/project-phases.md` → `
 | 0 | O engine terminou de verdade? | claude: `is_error` no JSON de resultado; agy: `status` no JSON de saída; codex: exit code |
 | 1 | A sessão escreveu código? | Assinatura da árvore antes/depois. **Sinal, não veredito** — fase já implementada faz o engine (corretamente) não escrever nada; o sinal alimenta a causa do ciclo de correção |
 | 2 | A suite de testes passa? | Rodada **pelo ralph**, fora da sessão do agente — o agente não pode "mentir verde" |
-| 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`). Também emite as linhas `SCOPE` (arquivos que nenhuma task pede) e `STANDARDS` (regras do `AGENTS.md`/`CLAUDE.md`): um `WARN` aparece no log e nunca reprova a fase |
+| 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE/BLOCKED` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`). Também emite as linhas `SCOPE` (arquivos que nenhuma task pede) e `STANDARDS` (regras do `AGENTS.md`/`CLAUDE.md`): um `WARN` aparece no log. Do ciclo 2 em diante, `SCOPE: WARN` reprova o gate: qualquer arquivo que a fase mudou e nenhuma task pede, mesmo um que o ciclo 1 mudou. `BLOCKED` quer dizer que o critério de aceite contradiz o requisito: a fase termina como `blocked`, sem ciclo de correção, e você corrige o critério no documento da fase |
 
-Qualquer gate vermelho → **ciclo de correção**: sessão nova recebe a fase inteira + a causa real da falha (nunca "os testes falharam" genérico). Quando o gate 3 reprova uma task que ele aprovou num ciclo anterior, a causa diz que a última correção a quebrou. Default: 3 ciclos por fase.
+Qualquer gate vermelho → **ciclo de correção**: sessão nova recebe a fase inteira + a causa real da falha (nunca "os testes falharam" genérico). Quando o gate 3 reprova uma task que ele aprovou num ciclo anterior, a causa diz que a última correção a quebrou. Quando as tasks listam arquivos em `Arquivos:`, a sessão de correção só pode mexer neles, e nos testes que elas pedem. O `BLOCKED` do gate 3 é a exceção: a fase termina sem ciclo de correção. Default: 3 ciclos por fase.
 
 Gates verdes com árvore limpa → fase já estava implementada em HEAD: marcada como feita, sem commit.
 
@@ -358,7 +359,7 @@ A sessão roda com `--output-format stream-json`, que emite eventos linha a linh
 3. **Reserva observacional** — sem marcador e sem lista, o ralph deduz pelo que o agente edita. Um plano do `/plan` declara `Arquivos:` em cada item, e é esse casamento (caminho editado ↔ arquivo declarado pela task) que dá a granularidade; sem a declaração, cai no enunciado da task. Ao entrar numa task, as anteriores contam como concluídas — o agente trabalha em ordem, e nem toda task tem arquivo próprio.
 4. **Sinal de vida**: assim que a sessão abre, a task 1 aparece em execução — nunca uma fase inteira parada em "Pendente".
 
-No fim da fase, o **gate 3 tem a palavra final**: o veredito `TASK <n>: DONE/INCOMPLETE` do verificador sobrepõe marcador, lista e dedução. Uma task marcada como pronta que não está no código aparece como `! Incompleta`.
+No fim da fase, o **gate 3 tem a palavra final**: o veredito `TASK <n>: DONE/INCOMPLETE/BLOCKED` do verificador sobrepõe marcador, lista e dedução. Uma task marcada como pronta que não está no código aparece como `! Incompleta`.
 
 Ou seja: durante a fase o painel mostra a intenção do agente; ao fim da fase mostra a verdade verificada.
 

@@ -165,8 +165,11 @@ if [ "$verify" -eq 1 ]; then
   verdicts=""
   if [ "$implemented" -eq 0 ]; then
     for i in $(seq 1 "$tasks"); do verdicts+="TASK $i: INCOMPLETE — nenhum codigo encontrado"$'\n'; done
-  elif [ "$scenario" = "verify-incomplete-once" ] && [ "$n" -eq 1 ]; then
+  elif { [ "$scenario" = "verify-incomplete-once" ] || [ "$scenario" = "verify-scope-late" ]; } && [ "$n" -eq 1 ]; then
     verdicts+="TASK 1: INCOMPLETE — o arquivo nao foi criado"$'\n'
+    for i in $(seq 2 "$tasks"); do verdicts+="TASK $i: DONE"$'\n'; done
+  elif [ "$scenario" = "verify-blocked" ] && [ "$n" -eq 1 ]; then
+    verdicts+="TASK 1: BLOCKED — 'top > base' contradiz blocos que se tocam"$'\n'
     for i in $(seq 2 "$tasks"); do verdicts+="TASK $i: DONE"$'\n'; done
   elif [ "$scenario" = "verify-flip" ] && [ "$n" -le 2 ]; then
     # Chamada 1: falta a task 2. Chamada 2: a correcao entrega a 2 e quebra a 1.
@@ -187,6 +190,11 @@ if [ "$verify" -eq 1 ]; then
     echo "TASK 1: INCOMPLETE — revisado no ultimo eco"
     for i in $(seq 2 "$tasks"); do echo "TASK $i: DONE"; done
     exit 0
+  fi
+
+  # A correcao do ciclo 2 sai do escopo; a do ciclo 3 volta para dentro.
+  if [ "$scenario" = "verify-scope-late" ] && [ "$n" -eq 2 ]; then
+    verdicts="SCOPE: WARN — src/outro.txt fora das tasks"$'\n'"$verdicts"
   fi
 
   # Eixos de aviso: SCOPE fica WARN; STANDARDS e revisado para OK no ultimo eco.
@@ -1660,6 +1668,11 @@ if case_enabled retro-sources; then
   (cd "$d/repo" && bash -c "$retro_block") > "$d/retro.txt" 2>&1
   assert_contains "$d/retro.txt" "phase-01.verify-1.log: SCOPE: WARN" "acha o aviso de escopo"
   assert_not_contains "$d/retro.txt" "STANDARDS" "ultimo eco vence: STANDARDS revisado para OK"
+
+  d=$(new_case retro-blocked)
+  run_ralph "$d" verify-blocked --engine claude --test-cmd "$d/test.sh" --max-cycles 2 > /dev/null
+  (cd "$d/repo" && bash -c "$retro_block") > "$d/retro.txt" 2>&1
+  assert_contains "$d/retro.txt" "phase-01.verify-1.log: TASK 1: BLOCKED" "acha a task bloqueada"
 fi
 
 # ---------------------------------------------------------------------------
@@ -1978,6 +1991,41 @@ if case_enabled claude-isolate; then
   CASE_ISOLATE=0 run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
   f="$d/state/claude_iso"
   assert_eq 5 "$(grep -c ' none$' "$f")" "RALPH_ISOLATE=0: nenhuma flag de isolamento"
+fi
+
+# ---------------------------------------------------------------------------
+# 52. Verificador BLOCKED (criterio contradiz o requisito) -> fase bloqueada sem
+#     ciclo de correcao; run.tsv e painel mostram blocked.
+# ---------------------------------------------------------------------------
+if case_enabled verify-blocked; then
+  header "52. gate 3 BLOCKED encerra a fase sem ciclo de correcao"
+  d=$(new_case verify-blocked)
+  rc=$(run_ralph "$d" verify-blocked --engine claude --test-cmd "$d/test.sh" --max-cycles 3)
+  assert_eq 1 "$rc" "exit 1"
+  assert_eq 1 "$(cat "$d/state/impl_calls")" "uma sessao de implementacao"
+  assert_eq 1 "$(cat "$d/state/verify_calls")" "um verificador"
+  test ! -f "$d/repo/.phases/prompts/phase-01.cycle-2.txt" && ok "nenhum ciclo de correcao" || bad "nenhum ciclo de correcao"
+  assert_eq 1 "$(commits "$d")" "nenhum commit"
+  assert_contains "$d/out.log" "BLOQUEADA no ciclo 1" "fase reportada como bloqueada"
+  assert_contains "$d/repo/.phases/state/run.tsv" "$(printf 'PHASE\t1\tblocked\t')" "run.tsv: fase blocked"
+  assert_contains "$d/repo/.phases/state/run.tsv" "$(printf 'TASK\t1\t1\tblocked\t')" "run.tsv: task 1 blocked"
+  RALPH_WATCH_COLS=110 "$ROOT/scripts/ralph-watch.sh" --once --no-color "$d/repo" > "$d/panel.txt" 2>&1
+  assert_contains "$d/panel.txt" "⊗ Bloqueada" "painel mostra a fase bloqueada"
+fi
+
+# ---------------------------------------------------------------------------
+# 53. SCOPE: WARN reprova do ciclo 2 em diante (no ciclo 1 segue aviso, caso 41);
+#     o prompt de correcao limita os arquivos aos das tasks.
+# ---------------------------------------------------------------------------
+if case_enabled verify-scope-late; then
+  header "53. gate 3: SCOPE WARN reprova do ciclo 2 em diante"
+  d=$(new_case verify-scope-late)
+  rc=$(run_ralph "$d" verify-scope-late --engine claude --test-cmd "$d/test.sh" --max-cycles 3)
+  assert_eq 0 "$rc" "exit 0 (o ciclo 3 volta ao escopo)"
+  assert_eq 3 "$(commits "$d")" "1 commit por fase"
+  assert_contains "$d/repo/.phases/prompts/phase-01.cycle-3.txt" "SCOPE: WARN — src/outro.txt" "ciclo 2 reprovado por escopo: a causa vai ao ciclo 3"
+  assert_not_contains "$d/out.log" "Gate 3 (aviso) — SCOPE" "no ciclo 2 SCOPE nao e so aviso"
+  assert_contains "$d/repo/.phases/prompts/phase-01.cycle-2.txt" "Altere so os arquivos que as tasks da fase pedem" "prompt de correcao limita os arquivos"
 fi
 
 # ---------------------------------------------------------------------------
