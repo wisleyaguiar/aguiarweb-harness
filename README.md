@@ -137,7 +137,7 @@ Produces, under `.spec/features/<slug>/`:
 Key characteristics:
 
 - **No issue tracker** — the confirmed description + ACs are the source of truth. No Jira.
-- **Complexity tier** (`light` / `standard` / `complete`) classified from objective signals (requirement count, multi-repo, contracts, messaging); adjusts SPEC depth, whether the clarifier is mandatory, and contract emission.
+- **Complexity tier** (`light` / `standard` / `complete`) classified from objective signals (requirement count, size, multi-repo, contracts, messaging), shown with the signal that set it so you can correct it; a small change (≤ 5 files, no schema change, no API route) is `light` whatever its requirement count; adjusts SPEC depth, whether the clarifier is mandatory, and contract emission.
 - **Human checkpoints** at every step: confirmation of the normalized input, SPEC approval, ambiguity resolution, decomposition sign-off.
 - **Two-phase clarifier** — the agent analyzes the SPEC and returns prioritized questions; the router presents them to the developer and re-invokes the agent with the answers, which updates the SPEC in-place.
 - **Fresh-context plan review** (`standard` / `complete`) — `plan-reviewer` reads only what a `ralph.sh` session reads (project docs, init chain, SPEC, PLAN, PHASES), paraphrases the plan, and flags decisions left to the implementer, missing files, and acceptance criteria that cannot be checked. Blockers go back to the planner once; the rest reaches the decomposition checkpoint.

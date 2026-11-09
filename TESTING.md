@@ -23,7 +23,7 @@ Add a row for each run. Name the version, the date, and exactly what ran.
 ## Not run live yet
 
 - `/init` hopping to an `init:*` command through the Skill tool in Claude Code.
-- `/plan` with the planner rules (file actions, reuse, no decision left open), the RIGID coverage check, the position-criterion rule, and `plan-reviewer` on a `standard` feature.
+- `/plan` with the planner rules (file actions, reuse, no decision left open), the RIGID coverage check, the position-criterion rule, the small-surface tier, and `plan-reviewer` on a `standard` feature.
 - `omitClaudeMd` keeping `CLAUDE.md` and `AGENTS.md` out of an agent's starting context.
 - `ralph.sh` writing the regression note on a real run.
 - `/ai-context` listing `missing path:` warnings on a real repo.

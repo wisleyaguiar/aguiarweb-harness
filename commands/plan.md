@@ -44,15 +44,17 @@ Classify from signals, not judgment. Signals straddle tiers → pick the **highe
 
 | Tier | Signals |
 |---|---|
-| `light` | ≤ 3 functional requirements AND single-repo AND no formal contract (OpenAPI/gRPC/AsyncAPI) AND no async messaging surface |
+| `light` | (≤ 3 functional requirements OR small surface) AND single-repo AND no formal contract (OpenAPI/gRPC/AsyncAPI) AND no async messaging surface |
 | `standard` | 4–10 RFs AND single-repo AND optional contract / optional messaging |
 | `complete` | 11+ RFs OR multi-repo OR multiple formal contracts OR domain-heavy (≥ 2 bounded contexts) |
 
 Before `specifier` runs, the RF count is uncertain — use the confirmed AC count as proxy.
 
+**Small surface**: ≤ 5 files touched (estimated from the description and ACs), no schema or migration change, and no new or changed API route. It makes a story `light` whatever its RF count: thin requirements (a title, a text, a test, a doc line) inflate the count, not the work. It overrides the RF count only; multi-repo, contracts, messaging, and domain-heavy still win, and the straddle rule does not apply against it. Any of the three unknown → it does not hold; use the count.
+
 Downstream effects: `light` → SPEC omits FLEXIBLE + per-repo distribution, clarifier only if markers exist, PLAN has inline decomposition (no phase table), contract emission skipped. `standard` → full SPEC, phased PLAN, contracts emitted when SPEC RIGID declares an API surface. `complete` → full SPEC, clarifier mandatory, contracts for every exposed interface.
 
-**Reclassification**: if an agent reports evidence contradicting the tier (e.g. `specifier` finds 8 RFs on a `light` story), do not silently upgrade — report the delta to the developer, confirm, and re-delegate with the corrected tier.
+**Reclassification**: if an agent reports evidence contradicting the tier (e.g. `specifier` finds 8 RFs on a `light` story that also changes the schema, adds or changes an API route, or touches more than 5 files), do not silently upgrade — report the delta to the developer, confirm, and re-delegate with the corrected tier.
 
 ## Flow
 
@@ -63,7 +65,7 @@ Resolve the description per the Input table. Then derive:
 - `summary` — one line.
 - `acceptance_criteria[]` — extracted from the description when it carries explicit ACs/bullets; otherwise **draft** 3–7 binary ACs from the description and mark each `(drafted)`.
 - `slug` — kebab-case from the summary, ≤ 50 chars.
-- `tier` — per the table above (AC count proxy).
+- `tier` — per the table above (AC count proxy, or small surface), plus the signal that set it.
 
 Single parallel probe batch (Bash `test -f` + Read only what exists):
 
@@ -81,7 +83,7 @@ Persist the resolved **paths** in pipeline context. Subsequent steps never re-pr
 
 ### 3 — Checkpoint: confirm normalized input
 
-Present `summary`, the ACs (drafted ones flagged), `slug`, and `tier`. The developer confirms or corrects. **Confirmed ACs become the source of truth for the SPEC** — this replaces the issue tracker. Do not delegate before confirmation.
+Present `summary`, the ACs (drafted ones flagged), `slug`, and `tier` with the signal that set it (e.g. `light — small surface: ~4 files, no schema, no API`, or `standard — 6 ACs`), and say the tier can be corrected here. The developer confirms or corrects. **Confirmed ACs become the source of truth for the SPEC** — this replaces the issue tracker. Do not delegate before confirmation.
 
 ### 4 — Architecture gate
 

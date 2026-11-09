@@ -135,7 +135,7 @@ Produz, sob `.spec/features/<slug>/`:
 Características:
 
 - **Sem issue tracker** — a descrição confirmada + ACs são a fonte de verdade. Nada de Jira.
-- **Tier de complexidade** (`light` / `standard` / `complete`) classificado por sinais objetivos (nº de requisitos, multi-repo, contratos, mensageria); ajusta a profundidade da SPEC, a obrigatoriedade do clarifier e a emissão de contratos.
+- **Tier de complexidade** (`light` / `standard` / `complete`) classificado por sinais objetivos (nº de requisitos, tamanho, multi-repo, contratos, mensageria), mostrado com o sinal que o decidiu para você corrigir; uma mudança pequena (≤ 5 arquivos, sem mudar o schema, sem rota de API) é `light` qualquer que seja o nº de requisitos; ajusta a profundidade da SPEC, a obrigatoriedade do clarifier e a emissão de contratos.
 - **Checkpoints humanos** em cada etapa: confirmação do input normalizado, aprovação da SPEC, resolução de ambiguidades, confirmação da decomposição.
 - **Clarifier em duas fases** — o agente analisa a SPEC e devolve perguntas priorizadas; o roteador as apresenta ao desenvolvedor e re-invoca o agente com as respostas, que atualiza a SPEC in-place.
 - **Revisão do plano sem contexto** (`standard` / `complete`) — o `plan-reviewer` lê só o que a sessão do `ralph.sh` lê (docs do projeto, cadeia init, SPEC, PLAN, PHASES), parafraseia o plano e aponta decisões deixadas ao implementador, arquivos que não existem e critérios de aceite que não dá para conferir. Blockers voltam ao planner uma vez; o resto chega ao checkpoint da decomposição.
