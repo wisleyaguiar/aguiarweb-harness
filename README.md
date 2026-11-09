@@ -191,6 +191,9 @@ Reads what the last `ralph.sh` run left on disk — `.phases/state/run.tsv`, the
 | `STANDARDS: WARN` | A lint rule, hook, or test for a mechanical rule; one line in `AGENTS.md` for a judgement call |
 | `SCOPE: WARN` | A missing or loosely worded task |
 | The session looked in the wrong files | A navigation pointer in `AGENTS.md`, or re-run `/ai-context` |
+| A phase passed only after a step-up, and the cause was not a criterion or scope problem | Raise its `**Route:**` line |
+
+It always ends with a cost table: the time, API time, and cost of each implementation session, split by model (claude engine). A clean run still shows where the money went.
 
 Read-only: it proposes, you apply. It covers the last run only, because `ralph.sh` deletes `.phases/` at the start of each run.
 

@@ -189,6 +189,9 @@ Lê o que o último run do `ralph.sh` deixou no disco — `.phases/state/run.tsv
 | `STANDARDS: WARN` | Regra de lint, hook ou teste para regra mecânica; uma linha no `AGENTS.md` para questão de julgamento |
 | `SCOPE: WARN` | Task faltando ou escrita de forma vaga |
 | A sessão procurou nos arquivos errados | Um ponteiro de navegação no `AGENTS.md`, ou rodar `/ai-context` de novo |
+| Uma fase só passou depois de subir o modelo, e a causa não era critério nem escopo | Subir a linha `**Route:**` dela |
+
+Sempre termina com uma tabela de custo: tempo, tempo de API e custo de cada sessão de implementação, por modelo (engine claude). Um run limpo também mostra para onde foi o dinheiro.
 
 Só leitura: ele propõe, você aplica. Cobre só o último run, porque o `ralph.sh` apaga `.phases/` no início de cada run.
 

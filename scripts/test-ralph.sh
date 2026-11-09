@@ -223,7 +223,9 @@ n=$(bump impl_calls)
 # A chave da API de decisao nao pode chegar a sessao do agente.
 echo "${RALPH_ROUTE_KEY:-unset}" > "$state/impl_env_key"
 
-emit_claude_ok()    { echo '{"type":"result","subtype":"success","is_error":false,"result":"implementado"}'; }
+# Custo como no result real: modelUsage por modelo e, depois, o
+# model_usage_since_last_result (isca: o /retro nao pode somar de novo).
+emit_claude_ok()    { echo '{"type":"result","subtype":"success","is_error":false,"result":"implementado","duration_ms":2000,"duration_api_ms":1000,"total_cost_usd":0.25,"modelUsage":{"claude-sonnet-mock":{"inputTokens":9,"costUSD":0.2},"claude-opus-mock":{"inputTokens":1,"costUSD":0.05}},"model_usage_since_last_result":{"claude-isca-mock":{"costUSD":0.25}}}'; }
 emit_claude_limit() { echo "{\"type\":\"result\",\"subtype\":\"error\",\"is_error\":true,\"result\":\"Claude AI usage limit reached|$1\"}"; }
 
 # Reproduz o stream-json real do claude para a lista de tarefas do agente:
@@ -1662,6 +1664,9 @@ if case_enabled retro-sources; then
   assert_contains "$d/retro.txt" "phase-01.md|1|" "manifest mapeia fase para slug"
   assert_contains "$d/retro.txt" "== .phases/prompts/phase-01.cycle-2.txt" "acha o prompt de correcao"
   assert_contains "$d/retro.txt" ".phases/logs/phase-01.verify-1.log: TASK 1: INCOMPLETE" "acha a task incompleta no log do gate 3"
+  assert_contains "$d/retro.txt" ".phases/logs/phase-01.cycle-1.log  2s  api 1s  \$0.25  claude-sonnet-mock \$0.20  claude-opus-mock \$0.05" "custo por sessao e por modelo"
+  assert_contains "$d/retro.txt" "total  6s  api 3s  \$0.75" "total das 3 sessoes"
+  assert_not_contains "$d/retro.txt" "claude-isca-mock" "nao soma model_usage_since_last_result"
 
   d=$(new_case retro-axes)
   run_ralph "$d" verify-axes-warn --engine claude --test-cmd "$d/test.sh" --max-cycles 1 > /dev/null
