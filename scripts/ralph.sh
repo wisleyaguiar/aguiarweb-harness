@@ -90,7 +90,10 @@
 #      claude o verificador usa um modelo barato (RALPH_VERIFY_MODEL, default:
 #      sonnet) — e leitura + checklist. No engine agy o verificador roda numa
 #      worktree descartavel (o agy nao tem modo read-only por invocacao).
-#      Tambem julga escopo e padroes (SCOPE/STANDARDS): so aviso, nao reprova.
+#      Tambem julga escopo e padroes (SCOPE/STANDARDS): aviso no ciclo 1; do
+#      ciclo 2 em diante SCOPE: WARN reprova (a correcao saiu do escopo).
+#      TASK <n>: BLOCKED (criterio contradiz o requisito) encerra a fase como
+#      `blocked`, sem ciclo de correcao: so o documento da fase resolve.
 #
 # Gates verdes com a arvore limpa => a fase ja estava implementada em HEAD:
 # marcada como feita, sem commit (nao ha o que commitar).
@@ -128,6 +131,11 @@
 #                            pela OpenRouter: https://openrouter.ai/api/v1/systemone
 #   RALPH_ROUTE_MODEL        modelo de quem decide: haiku no claude; gpt-6-luna
 #                            (openai) ou jev-latest (jev) na API
+#   RALPH_ISOLATE            so claude. 1 (default): a sessao nao le o
+#                            ~/.claude do usuario (plugins, MCP, hooks,
+#                            settings, CLAUDE.md); vale so a config do
+#                            projeto, o .mcp.json da raiz quando existe e o
+#                            sail-guard.sh ao lado deste script. 0: le tudo
 #   RALPH_MAX_CYCLES         ciclos de correcao por fase (default: 3)
 #   RALPH_MAX_LIMIT_WAITS    esperas consecutivas por limite, por fase (default: 20)
 #   RALPH_LIMIT_WAIT_DEFAULT fallback de espera em segundos (default: 1800)
@@ -1005,8 +1013,9 @@ state_tasks_from_verify() {
     case "$verdict" in
       DONE)       task_status_set "$num" "$n" "done" ;;
       INCOMPLETE) task_status_set "$num" "$n" incomplete ;;
+      BLOCKED)    task_status_set "$num" "$n" blocked ;;
     esac
-  done < <(sed 's/^[[:space:]]*//' "$verify_log" | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE)' || true)
+  done < <(sed 's/^[[:space:]]*//' "$verify_log" | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE|BLOCKED)' || true)
   state_flush
 }
 
@@ -1411,6 +1420,10 @@ antes de mudar qualquer coisa.
 
 ## Regras obrigatorias
 - Corrija APENAS o que falta. Nao reimplemente o que ja esta correto e testado.
+- Altere so os arquivos que as tasks da fase pedem (linhas `Arquivos:`, quando
+  houver) e os testes, fixtures ou migrations que elas exigem. Nunca mexa em
+  outro arquivo so para um criterio passar: se ele so passa assim, deixe como
+  esta e diga isso no fim do turno.
 - Nao deixe TODOs, placeholders ou testes pulados.
 - Rode a suite de testes do projeto ao final e garanta que ela passa.
 INTRO
@@ -1448,12 +1461,19 @@ testes, rotas, migrations — o que a task exigir) e emita EXATAMENTE UMA linha:
 
 TASK <n>: DONE
 TASK <n>: INCOMPLETE — <o que falta>
+TASK <n>: BLOCKED — <criterio> contradiz <requisito>
 
 Regras:
 - <n> e o indice da task na fase, comecando em 1.
 - Uma linha TASK para cada task, sem excecao, sem agrupar.
 - Nao emita nenhum outro texto alem das linhas SCOPE, STANDARDS e TASK.
 - Codigo ausente, TODO, placeholder ou teste faltando => INCOMPLETE.
+- BLOCKED e a excecao: o criterio, como esta escrito, nao pode ser cumprido sem
+  violar o requisito da propria task, outra task da fase ou a spec, ou sem
+  mexer em arquivo que nenhuma task pede (ex.: pede `>` entre blocos que se
+  tocam, onde o certo e `>=`). Cite o criterio e o que ele contradiz. BLOCKED
+  encerra a fase sem correcao. Se um codigo nos arquivos das tasks cumpriria o
+  criterio sem violar nada, e INCOMPLETE.
 - Na duvida, INCOMPLETE.
 
 Antes das linhas TASK, julgue mais dois eixos e emita EXATAMENTE UMA linha de
@@ -1463,7 +1483,8 @@ cada, no formato `SCOPE: OK` ou `SCOPE: WARN — <motivo>` (idem para STANDARDS)
   exigido por uma task esta no escopo.
 - STANDARDS: confira os arquivos alterados contra as convencoes do AGENTS.md ou
   CLAUDE.md do projeto. WARN cita a regra e o arquivo. Sem esses arquivos, OK.
-- Esses eixos sao so aviso para o operador: nunca mudam o veredito das tasks.
+- Esses eixos nunca mudam o veredito das tasks. O ralph trata SCOPE: WARN
+  como reprovacao a partir do ciclo 2; o resto e aviso para o operador.
 
 Execucao (headless — leia com atencao):
 - Voce roda em sessao nao-interativa: o processo MORRE quando este turno acaba.
@@ -1876,6 +1897,20 @@ route_phases() {
   state_meta activity ""
 }
 
+# Sessoes e testes rodam em segundo plano + `bg_wait $!`. O TaskStop do Claude
+# Code manda TERM ao grupo e SIGKILL ~1 s depois; com o filho em primeiro plano
+# o bash so roda o trap quando o filho sai, e o run.tsv ficava `running`. O
+# wait e interrompido pelo sinal: o on_exit fecha o estado na hora e mata
+# ENGINE_PID (um filho com & ignora SIGINT, entao o Ctrl-C nao chega nele).
+ENGINE_PID=""
+bg_wait() {
+  ENGINE_PID="$1"
+  local rc=0
+  wait "$ENGINE_PID" || rc=$?
+  ENGINE_PID=""
+  return "$rc"
+}
+
 run_engine() {
   local prompt_file="$1" log_file="$2" mode="$3"
 
@@ -1896,6 +1931,20 @@ run_engine() {
     [ -n "$R_MODEL" ] && route_args+=(--model "$R_MODEL")
     [ -n "$R_EFFORT" ] && route_args+=(--effort "$R_EFFORT")
   fi
+  # Sessao claude isolada do ~/.claude do usuario: sem plugins, MCP, hooks e
+  # CLAUDE.md de usuario (centenas de ferramentas e regras que nao sao do
+  # projeto). O CLAUDE.md e o .claude/settings*.json do projeto continuam.
+  # Checado a cada sessao: uma fase pode criar o .mcp.json.
+  local iso_args=()
+  if [ "${RALPH_ISOLATE:-1}" != "0" ]; then
+    iso_args=(--setting-sources "project,local" --strict-mcp-config)
+    [ -f .mcp.json ] && iso_args+=(--mcp-config .mcp.json)
+    # O hook sail-guard do bc-harness vem do plugin, que o isolamento corta:
+    # volta por --settings quando o script esta ao lado deste.
+    local guard
+    guard="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sail-guard.sh"
+    [ -x "$guard" ] && iso_args+=(--settings "{\"hooks\":{\"PreToolUse\":[{\"matcher\":\"Bash\",\"hooks\":[{\"type\":\"command\",\"command\":\"\\\"$(json_escape "$guard")\\\"\"}]}]}}")
+  fi
 
   while true; do
     local rc=0
@@ -1906,15 +1955,17 @@ run_engine() {
       else
         # json: uma linha final com "status" — e o que o gate 0 le.
         # < /dev/null: mesma razao do claude -p (nao engolir o stream de quem chamou).
-        agy -p "$(cat "$prompt_file")" --dangerously-skip-permissions \
-          --output-format json < /dev/null 2>&1 | tee "$log_file" || rc=$?
+        { agy -p "$(cat "$prompt_file")" --dangerously-skip-permissions \
+          --output-format json < /dev/null 2>&1 | tee "$log_file"; } &
+        bg_wait $! || rc=$?
       fi
     elif [[ "$ENGINE" == "codex" ]]; then
       if [[ "$mode" == "verify" ]]; then
-        codex exec --sandbox read-only ${model_args[@]+"${model_args[@]}"} - < "$prompt_file" 2>&1 | tee "$log_file" || rc=$?
+        { codex exec --sandbox read-only ${model_args[@]+"${model_args[@]}"} - < "$prompt_file" 2>&1 | tee "$log_file"; } &
       else
-        codex exec --sandbox danger-full-access - < "$prompt_file" 2>&1 | tee "$log_file" || rc=$?
+        { codex exec --sandbox danger-full-access - < "$prompt_file" 2>&1 | tee "$log_file"; } &
       fi
+      bg_wait $! || rc=$?
     else
       # < /dev/null: claude -p le stdin quando nao e TTY. Sem o redirect ele
       # consome o stream de quem chamou (ex: o manifest do loop de fases).
@@ -1922,16 +1973,20 @@ run_engine() {
         # Decisao da rota: o prompt vai pelo stdin (todas as fases juntas
         # passariam do limite de 128 KB por argumento do Linux) e a resposta e
         # o JSON de resultado com structured_output.
-        env -u CLAUDECODE claude -p --model "$ROUTE_DECIDER" --effort low \
+        env -u CLAUDECODE claude -p ${iso_args[@]+"${iso_args[@]}"} \
+          --model "$ROUTE_DECIDER" --effort low \
           --allowedTools "Read,Glob,Grep" \
           --output-format json --json-schema "$ROUTE_SCHEMA" \
-          < "$prompt_file" > "$log_file" 2>&1 || rc=$?
+          < "$prompt_file" > "$log_file" 2>&1 &
+        bg_wait $! || rc=$?
       elif [[ "$mode" == "verify" ]]; then
-        env -u CLAUDECODE claude --dangerously-skip-permissions \
+        { env -u CLAUDECODE claude --dangerously-skip-permissions \
+          ${iso_args[@]+"${iso_args[@]}"} \
           ${model_args[@]+"${model_args[@]}"} \
           -p "$(cat "$prompt_file")" \
           --allowedTools "Read,Glob,Grep" \
-          --output-format text < /dev/null 2>&1 | tee "$log_file" || rc=$?
+          --output-format text < /dev/null 2>&1 | tee "$log_file"; } &
+        bg_wait $! || rc=$?
       else
         # stream-json: eventos linha a linha ENQUANTO a sessao roda — e o que
         # da progresso por task ao painel. O JSON de resultado continua sendo a
@@ -1939,16 +1994,14 @@ run_engine() {
         # O exit code do CLI e sinal fraco; quem decide e o gate 0.
         local quiet=0
         $DASHBOARD && quiet=1
-        if env -u CLAUDECODE claude --dangerously-skip-permissions \
+        { env -u CLAUDECODE claude --dangerously-skip-permissions \
+             ${iso_args[@]+"${iso_args[@]}"} \
              ${route_args[@]+"${route_args[@]}"} \
              -p "$(cat "$prompt_file")" \
              --output-format stream-json --verbose < /dev/null 2>&1 \
              | tee "$log_file" \
-             | stream_watch "$LIVE_STATE" "${RALPH_PHASE_NUM:-0}" "$quiet" "$CURRENT_PHASE_FILE"; then
-          rc=0
-        else
-          rc=$?
-        fi
+             | stream_watch "$LIVE_STATE" "${RALPH_PHASE_NUM:-0}" "$quiet" "$CURRENT_PHASE_FILE"; } &
+        bg_wait $! || rc=$?
       fi
     fi
 
@@ -1989,8 +2042,10 @@ agy_verify() {
 
   # Skip-permissions so dentro da copia: sem ele o headless nega ferramentas ao
   # acaso e o verificador emite INCOMPLETE falso.
-  (cd "$AGY_VERIFY_DIR" && agy -p "$prompt" --dangerously-skip-permissions "$@" < /dev/null) 2>&1 \
-    | tee "$log_file" || rc=$?
+  # exec: o agy e filho direto do grupo, e o on_exit o alcanca (bg_wait).
+  { (cd "$AGY_VERIFY_DIR" && exec agy -p "$prompt" --dangerously-skip-permissions "$@" < /dev/null) 2>&1 \
+    | tee "$log_file"; } &
+  bg_wait $! || rc=$?
 
   agy_verify_cleanup
   return "$rc"
@@ -2083,7 +2138,8 @@ gate2_tests_pass() {
   local rc=0
   # < /dev/null: sail test (docker compose exec) anexa stdin e consumiria o
   # stream de quem chamou, alem de poder travar esperando input.
-  bash -c "$TEST_CMD" < /dev/null > "$test_log" 2>&1 || rc=$?
+  bash -c "$TEST_CMD" < /dev/null > "$test_log" 2>&1 &
+  bg_wait $! || rc=$?
 
   if [ "$rc" -ne 0 ]; then
     GATE_CAUSE="O comando de teste do projeto ('$TEST_CMD') falhou com codigo $rc. Saida:"$'\n'"$(tail -n 200 "$test_log")"
@@ -2102,7 +2158,9 @@ gate2_tests_pass() {
 #   - ciclo de correcao (a fase ja reprovou uma vez)
 #   - gate 2 desabilitado (sem suite, o verificador e o unico gate)
 # GATE3_RAN diz ao caminho "ja implementada" quais gates de fato validaram HEAD.
+# GATE3_BLOCKED: o verificador deu BLOCKED; a fase acaba sem ciclo de correcao.
 GATE3_RAN=0
+GATE3_BLOCKED=0
 
 # verify_regressions <phase_file> <ciclo> <linhas TASK n: INCOMPLETE>
 # Task INCOMPLETE agora que o verificador de um ciclo anterior deu DONE: a
@@ -2130,6 +2188,7 @@ gate3_independent_verify() {
   local verify_log="$LOG_DIR/${phase_file%.md}.verify-${cycle}.log"
 
   GATE3_RAN=0
+  GATE3_BLOCKED=0
 
   case "$VERIFY_MODE" in
     off)
@@ -2165,7 +2224,7 @@ gate3_independent_verify() {
   # cobertura estoura e reprova fase completa.
   local task_lines
   task_lines=$(sed 's/^[[:space:]]*//' "$verify_log" \
-    | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE)' \
+    | grep -E '^TASK [0-9]+: (DONE|INCOMPLETE|BLOCKED)' \
     | awk '{ n = $2; sub(/:$/, "", n); verdict[n] = $0 }
            END { for (n in verdict) printf "%d\t%s\n", n, verdict[n] }' \
     | sort -n | cut -f2- || true)
@@ -2174,7 +2233,7 @@ gate3_independent_verify() {
   parsed=$(printf '%s' "$task_lines" | grep -c . || true)
 
   if [ "$parsed" -eq 0 ]; then
-    GATE_CAUSE="O verificador independente nao emitiu nenhuma linha 'TASK <n>: DONE|INCOMPLETE' — nao foi possivel confirmar que a fase esta completa. Ultimas linhas do verificador:"$'\n'"$(tail -n 40 "$verify_log")"
+    GATE_CAUSE="O verificador independente nao emitiu nenhuma linha 'TASK <n>: DONE|INCOMPLETE|BLOCKED' — nao foi possivel confirmar que a fase esta completa. Ultimas linhas do verificador:"$'\n'"$(tail -n 40 "$verify_log")"
     return 1
   fi
 
@@ -2182,6 +2241,29 @@ gate3_independent_verify() {
     GATE_CAUSE="O verificador cobriu $parsed de $expected tasks — cobertura incompleta. Linhas emitidas:"$'\n'"$task_lines"
     return 1
   fi
+
+  # Criterio que contradiz o requisito: outro ciclo so tentaria contornar o
+  # criterio (fora do escopo, ou num modelo mais caro). Quem corrige e o plano.
+  local blocked
+  blocked=$(printf '%s\n' "$task_lines" | grep -E '^TASK [0-9]+: BLOCKED' || true)
+  if [ -n "$blocked" ]; then
+    GATE3_BLOCKED=1
+    GATE_CAUSE="O verificador independente achou criterios que contradizem o requisito:"$'\n'"$blocked"
+    return 1
+  fi
+
+  # SCOPE/STANDARDS: mesmo eco do codex das TASK, o ultimo vence. Do ciclo 2 em
+  # diante SCOPE: WARN reprova: a correcao mexeu onde nenhuma task pede.
+  local axes scope_fail=""
+  axes=$(sed 's/^[[:space:]]*//' "$verify_log" \
+    | grep -E '^(SCOPE|STANDARDS): (OK|WARN)' \
+    | awk '{ last[$1] = $0 } END { for (a in last) print last[a] }' \
+    | grep -E '^[A-Z]+: WARN' | sort || true)
+  if [ "$cycle" -ge 2 ]; then
+    scope_fail=$(printf '%s\n' "$axes" | grep '^SCOPE: WARN' || true)
+    axes=$(printf '%s\n' "$axes" | grep -v '^SCOPE: WARN' || true)
+  fi
+  [ -n "$scope_fail" ] && scope_fail="Fora do escopo da fase (do ciclo 2 em diante reprova): desfaca a mudanca no arquivo que nenhuma task pede."$'\n'"$scope_fail"
 
   local incomplete
   incomplete=$(printf '%s\n' "$task_lines" | grep 'INCOMPLETE' || true)
@@ -2191,15 +2273,14 @@ gate3_independent_verify() {
     local regressions
     regressions=$(verify_regressions "$phase_file" "$cycle" "$incomplete")
     [ -n "$regressions" ] && GATE_CAUSE+=$'\n\n'"$regressions"
+    [ -n "$scope_fail" ] && GATE_CAUSE+=$'\n\n'"$scope_fail"
     return 1
   fi
 
-  # SCOPE/STANDARDS sao so aviso. Mesmo eco do codex das TASK: o ultimo vence.
-  local axes
-  axes=$(sed 's/^[[:space:]]*//' "$verify_log" \
-    | grep -E '^(SCOPE|STANDARDS): (OK|WARN)' \
-    | awk '{ last[$1] = $0 } END { for (a in last) print last[a] }' \
-    | grep -E '^[A-Z]+: WARN' | sort || true)
+  if [ -n "$scope_fail" ]; then
+    GATE_CAUSE="$scope_fail"
+    return 1
+  fi
 
   success "Gate 3 — $parsed/$expected tasks confirmadas no codigo"
   if [ -n "$axes" ]; then
@@ -2244,6 +2325,7 @@ run_phase() {
 
   LIMIT_WAITS=0
   GATE_CAUSE=""
+  GATE3_BLOCKED=0
 
   echo ""
   log "[$seq/$total] Phase $phase_num: $phase_title"
@@ -2318,8 +2400,13 @@ run_phase() {
           state_gate "$phase_num" 3 fail
           LAST_GATE="gate 3 — verificacao independente"
           GATE_CAUSE="${no_change_note}${GATE_CAUSE}"
-          fail "Gate 3 vermelho — implementacao incompleta"
-          gate_verdict="red"
+          if [ "$GATE3_BLOCKED" -eq 1 ]; then
+            fail "Gate 3 vermelho — criterio contradiz o requisito"
+            gate_verdict="blocked"
+          else
+            fail "Gate 3 vermelho — implementacao incompleta"
+            gate_verdict="red"
+          fi
         else
           state_tasks_from_verify "$phase_num" "$verify_log"
           if [ "$GATE3_RAN" -eq 1 ]; then state_gate "$phase_num" 3 pass
@@ -2328,8 +2415,9 @@ run_phase() {
       fi
     fi
 
-    if [ "$gate_verdict" = "red" ]; then
+    if [ "$gate_verdict" != "green" ]; then
       state_meta last_error "$(printf '%s' "$GATE_CAUSE" | head -n 1 | cut -c1-70)"
+      [ "$gate_verdict" = "blocked" ] && break
     else
       local phase_duration=$(($(date +%s) - phase_start))
 
@@ -2362,8 +2450,13 @@ run_phase() {
   done
 
   local phase_duration=$(($(date +%s) - phase_start))
-  state_phase_end "$phase_num" failed
-  fail "Phase $phase_num: $phase_title — FALHOU apos $MAX_CYCLES ciclos ($(format_duration "$phase_duration"))"
+  if [ "$GATE3_BLOCKED" -eq 1 ]; then
+    state_phase_end "$phase_num" blocked
+    fail "Phase $phase_num: $phase_title — BLOQUEADA no ciclo $cycle ($(format_duration "$phase_duration")): criterio contradiz o requisito. Corrija o criterio no documento da fase e rode de novo."
+  else
+    state_phase_end "$phase_num" failed
+    fail "Phase $phase_num: $phase_title — FALHOU apos $MAX_CYCLES ciclos ($(format_duration "$phase_duration"))"
+  fi
   fail "Ultima causa ($LAST_GATE):"
   printf '%s\n' "$GATE_CAUSE" | head -n 20 | sed 's/^/    /'
   fail "Logs em: $LOG_DIR/${phase_file%.md}.*"
@@ -2430,6 +2523,12 @@ on_exit() {
     meta_set status failed
     meta_set ended "$(date +%s)"
     state_flush
+  fi
+  # Sessao ou teste ainda vivo (sinal no meio do bg_wait): para ele, nao o deixa
+  # editando o repo sozinho. Filhos primeiro: o pai morto os deixaria orfaos.
+  if [ -n "$ENGINE_PID" ]; then
+    pkill -TERM -P "$ENGINE_PID" 2>/dev/null || true
+    kill -TERM "$ENGINE_PID" 2>/dev/null || true
   fi
   stop_dashboard
   agy_verify_cleanup

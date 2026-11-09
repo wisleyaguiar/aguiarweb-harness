@@ -24,7 +24,7 @@ Any check fails → halt with `precondition_failed: <reason>` instead of produci
 ## Workflow
 
 1. Read the architecture references and init chain files provided as paths. Record which file supplied the architecture rules. Explore the codebase (Glob/Grep/Read) for the slice the feature touches.
-2. Confirm the tier against what you find. Evidence contradicts it (e.g. 8 RFs on a `light` story) → halt and return `tier_mismatch: <evidence>` — the router reclassifies; never silently upgrade.
+2. Confirm the tier against what you find. Evidence contradicts it (e.g. 8 RFs on a `light` story that also changes the schema, adds or changes an API route, or touches more than 5 files; RF count alone does not, see `/plan` small surface) → halt and return `tier_mismatch: <evidence>` — the router reclassifies; never silently upgrade.
 3. Transform each requirement into GEARS syntax (Event-Driven, State-Driven, Conditional, Unwanted, Optional) with unique IDs (RF-XX, UI-XX, RNF-XX) and binary acceptance criteria.
 4. `mkdir -p .spec/features/[slug]` (Bash), then **Write** (never Bash cat/echo) `SPEC.md` per the Output Format.
 5. Return path + summary ≤ 200 bytes (RF/UI/RNF count, contract count, marker count, tier).

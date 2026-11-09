@@ -73,6 +73,7 @@ outfmt=""
 schema=""
 route=0
 stdin_txt=""
+iso=""
 
 if [ "$name" = "claude" ]; then
   # --json-schema = chamada do decisor da rota: -p sem argumento, prompt no stdin.
@@ -88,9 +89,16 @@ if [ "$name" = "claude" ]; then
       --effort) effort="$2"; shift 2 ;;
       --json-schema) schema="$2"; shift 2 ;;
       --output-format) outfmt="$2"; shift 2 ;;
+      --setting-sources) iso+="ss=$2 "; shift 2 ;;
+      --strict-mcp-config) iso+="strict "; shift ;;
+      --mcp-config) iso+="mcp=$2 "; shift 2 ;;
+      --settings) iso+="settings "; printf '%s' "$2" > "$state/claude_settings"; shift 2 ;;
       *) shift ;;
     esac
   done
+  # Uma linha por chamada: "<route|verify|impl> <flags de isolamento>".
+  kind=impl; [ "$verify" -eq 1 ] && kind=verify; [ "$route" -eq 1 ] && kind=route
+  echo "$kind ${iso:-none}" >> "$state/claude_iso"
 elif [ "$name" = "agy" ]; then
   # agy -p: mesmo risco de stdin do claude -p.
   [ -t 0 ] || cat > /dev/null
@@ -157,8 +165,11 @@ if [ "$verify" -eq 1 ]; then
   verdicts=""
   if [ "$implemented" -eq 0 ]; then
     for i in $(seq 1 "$tasks"); do verdicts+="TASK $i: INCOMPLETE — nenhum codigo encontrado"$'\n'; done
-  elif [ "$scenario" = "verify-incomplete-once" ] && [ "$n" -eq 1 ]; then
+  elif { [ "$scenario" = "verify-incomplete-once" ] || [ "$scenario" = "verify-scope-late" ]; } && [ "$n" -eq 1 ]; then
     verdicts+="TASK 1: INCOMPLETE — o arquivo nao foi criado"$'\n'
+    for i in $(seq 2 "$tasks"); do verdicts+="TASK $i: DONE"$'\n'; done
+  elif [ "$scenario" = "verify-blocked" ] && [ "$n" -eq 1 ]; then
+    verdicts+="TASK 1: BLOCKED — 'top > base' contradiz blocos que se tocam"$'\n'
     for i in $(seq 2 "$tasks"); do verdicts+="TASK $i: DONE"$'\n'; done
   elif [ "$scenario" = "verify-flip" ] && [ "$n" -le 2 ]; then
     # Chamada 1: falta a task 2. Chamada 2: a correcao entrega a 2 e quebra a 1.
@@ -179,6 +190,11 @@ if [ "$verify" -eq 1 ]; then
     echo "TASK 1: INCOMPLETE — revisado no ultimo eco"
     for i in $(seq 2 "$tasks"); do echo "TASK $i: DONE"; done
     exit 0
+  fi
+
+  # A correcao do ciclo 2 sai do escopo; a do ciclo 3 volta para dentro.
+  if [ "$scenario" = "verify-scope-late" ] && [ "$n" -eq 2 ]; then
+    verdicts="SCOPE: WARN — src/outro.txt fora das tasks"$'\n'"$verdicts"
   fi
 
   # Eixos de aviso: SCOPE fica WARN; STANDARDS e revisado para OK no ultimo eco.
@@ -207,7 +223,16 @@ n=$(bump impl_calls)
 # A chave da API de decisao nao pode chegar a sessao do agente.
 echo "${RALPH_ROUTE_KEY:-unset}" > "$state/impl_env_key"
 
-emit_claude_ok()    { echo '{"type":"result","subtype":"success","is_error":false,"result":"implementado"}'; }
+# slow-term: sessao longa; registra o TERM que o on_exit do ralph manda a ela.
+if [ "$scenario" = "slow-term" ]; then
+  trap 'echo TERM >> "$state/engine_term"; exit 143' TERM
+  touch "$state/slow_midpoint"
+  for _ in 1 2 3 4 5 6; do sleep 1; done
+fi
+
+# Custo como no result real: modelUsage por modelo e, depois, o
+# model_usage_since_last_result (isca: o /retro nao pode somar de novo).
+emit_claude_ok()    { echo '{"type":"result","subtype":"success","is_error":false,"result":"implementado","duration_ms":2000,"duration_api_ms":1000,"total_cost_usd":0.25,"modelUsage":{"claude-sonnet-mock":{"inputTokens":9,"costUSD":0.2},"claude-opus-mock":{"inputTokens":1,"costUSD":0.05}},"model_usage_since_last_result":{"claude-isca-mock":{"costUSD":0.25}}}'; }
 emit_claude_limit() { echo "{\"type\":\"result\",\"subtype\":\"error\",\"is_error\":true,\"result\":\"Claude AI usage limit reached|$1\"}"; }
 
 # Reproduz o stream-json real do claude para a lista de tarefas do agente:
@@ -496,6 +521,7 @@ run_ralph() {
     RALPH_ROUTE_KEY="${CASE_ROUTE_KEY:-}" \
     RALPH_ROUTE_URL="${CASE_ROUTE_URL:-}" \
     RALPH_ROUTE_MODEL="" \
+    RALPH_ISOLATE="${CASE_ISOLATE:-}" \
     MOCK_ROUTE="${CASE_MOCK_ROUTE:-ok}" \
     MOCK_API="${CASE_MOCK_API:-ok}" \
       bash "$RALPH" "$@" > "$dir/out.log" 2>&1
@@ -1645,12 +1671,20 @@ if case_enabled retro-sources; then
   assert_contains "$d/retro.txt" "phase-01.md|1|" "manifest mapeia fase para slug"
   assert_contains "$d/retro.txt" "== .phases/prompts/phase-01.cycle-2.txt" "acha o prompt de correcao"
   assert_contains "$d/retro.txt" ".phases/logs/phase-01.verify-1.log: TASK 1: INCOMPLETE" "acha a task incompleta no log do gate 3"
+  assert_contains "$d/retro.txt" ".phases/logs/phase-01.cycle-1.log  2s  api 1s  \$0.25  claude-sonnet-mock \$0.20  claude-opus-mock \$0.05" "custo por sessao e por modelo"
+  assert_contains "$d/retro.txt" "total  6s  api 3s  \$0.75" "total das 3 sessoes"
+  assert_not_contains "$d/retro.txt" "claude-isca-mock" "nao soma model_usage_since_last_result"
 
   d=$(new_case retro-axes)
   run_ralph "$d" verify-axes-warn --engine claude --test-cmd "$d/test.sh" --max-cycles 1 > /dev/null
   (cd "$d/repo" && bash -c "$retro_block") > "$d/retro.txt" 2>&1
   assert_contains "$d/retro.txt" "phase-01.verify-1.log: SCOPE: WARN" "acha o aviso de escopo"
   assert_not_contains "$d/retro.txt" "STANDARDS" "ultimo eco vence: STANDARDS revisado para OK"
+
+  d=$(new_case retro-blocked)
+  run_ralph "$d" verify-blocked --engine claude --test-cmd "$d/test.sh" --max-cycles 2 > /dev/null
+  (cd "$d/repo" && bash -c "$retro_block") > "$d/retro.txt" 2>&1
+  assert_contains "$d/retro.txt" "phase-01.verify-1.log: TASK 1: BLOCKED" "acha a task bloqueada"
 fi
 
 # ---------------------------------------------------------------------------
@@ -1938,6 +1972,103 @@ if case_enabled verify-regression; then
   assert_not_contains "$p.cycle-2.txt" "Regressao" "ciclo 2 sem aviso: nada que estava DONE caiu"
   assert_contains "$p.cycle-3.txt" "Regressao: a task 1 estava DONE no ciclo 1" "ciclo 3 avisa que a correcao quebrou a task 1"
   assert_not_contains "$p.cycle-3.txt" "a task 2 estava DONE" "so a task regredida entra no aviso"
+fi
+
+# ---------------------------------------------------------------------------
+# 51. Engine claude isolado do ~/.claude do usuario em toda chamada (rota,
+#     implementacao, verificador); .mcp.json do projeto entra; RALPH_ISOLATE=0
+#     desliga.
+# ---------------------------------------------------------------------------
+if case_enabled claude-isolate; then
+  header "51. sessoes claude isoladas da config do usuario"
+  d=$(new_case claude-isolate)
+  rc=$(run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto)
+  f="$d/state/claude_iso"
+  assert_eq 0 "$rc" "exit 0"
+  assert_eq 1 "$(grep -c '^route ' "$f")" "rota chamada uma vez"
+  assert_eq 2 "$(grep -c '^impl ' "$f")" "implementacao chamada por fase"
+  assert_eq 2 "$(grep -c '^verify ' "$f")" "verificador chamado por fase"
+  assert_eq 0 "$(grep -vc ' ss=project,local strict settings $' "$f")" "toda chamada com --setting-sources project,local --strict-mcp-config e o sail-guard"
+  assert_eq '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"\"'"$ROOT"'/scripts/sail-guard.sh\""}]}]}}' \
+    "$(cat "$d/state/claude_settings")" "--settings registra o sail-guard ao lado do ralph.sh"
+
+  d=$(new_case claude-isolate-mcp)
+  echo '{"mcpServers":{}}' > "$d/repo/.mcp.json"
+  git -C "$d/repo" add -A && git -C "$d/repo" commit -q -m "chore: mcp"
+  run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  f="$d/state/claude_iso"
+  assert_eq 0 "$(grep -vc ' ss=project,local strict mcp=.mcp.json settings $' "$f")" "com .mcp.json: toda chamada passa --mcp-config .mcp.json"
+
+  d=$(new_case claude-isolate-off)
+  CASE_ISOLATE=0 run_ralph "$d" ok --engine claude --test-cmd "$d/test.sh" --route auto > /dev/null
+  f="$d/state/claude_iso"
+  assert_eq 5 "$(grep -c ' none$' "$f")" "RALPH_ISOLATE=0: nenhuma flag de isolamento"
+fi
+
+# ---------------------------------------------------------------------------
+# 52. Verificador BLOCKED (criterio contradiz o requisito) -> fase bloqueada sem
+#     ciclo de correcao; run.tsv e painel mostram blocked.
+# ---------------------------------------------------------------------------
+if case_enabled verify-blocked; then
+  header "52. gate 3 BLOCKED encerra a fase sem ciclo de correcao"
+  d=$(new_case verify-blocked)
+  rc=$(run_ralph "$d" verify-blocked --engine claude --test-cmd "$d/test.sh" --max-cycles 3)
+  assert_eq 1 "$rc" "exit 1"
+  assert_eq 1 "$(cat "$d/state/impl_calls")" "uma sessao de implementacao"
+  assert_eq 1 "$(cat "$d/state/verify_calls")" "um verificador"
+  test ! -f "$d/repo/.phases/prompts/phase-01.cycle-2.txt" && ok "nenhum ciclo de correcao" || bad "nenhum ciclo de correcao"
+  assert_eq 1 "$(commits "$d")" "nenhum commit"
+  assert_contains "$d/out.log" "BLOQUEADA no ciclo 1" "fase reportada como bloqueada"
+  assert_contains "$d/repo/.phases/state/run.tsv" "$(printf 'PHASE\t1\tblocked\t')" "run.tsv: fase blocked"
+  assert_contains "$d/repo/.phases/state/run.tsv" "$(printf 'TASK\t1\t1\tblocked\t')" "run.tsv: task 1 blocked"
+  RALPH_WATCH_COLS=110 "$ROOT/scripts/ralph-watch.sh" --once --no-color "$d/repo" > "$d/panel.txt" 2>&1
+  assert_contains "$d/panel.txt" "⊗ Bloqueada" "painel mostra a fase bloqueada"
+fi
+
+# ---------------------------------------------------------------------------
+# 53. SCOPE: WARN reprova do ciclo 2 em diante (no ciclo 1 segue aviso, caso 41);
+#     o prompt de correcao limita os arquivos aos das tasks.
+# ---------------------------------------------------------------------------
+if case_enabled verify-scope-late; then
+  header "53. gate 3: SCOPE WARN reprova do ciclo 2 em diante"
+  d=$(new_case verify-scope-late)
+  rc=$(run_ralph "$d" verify-scope-late --engine claude --test-cmd "$d/test.sh" --max-cycles 3)
+  assert_eq 0 "$rc" "exit 0 (o ciclo 3 volta ao escopo)"
+  assert_eq 3 "$(commits "$d")" "1 commit por fase"
+  assert_contains "$d/repo/.phases/prompts/phase-01.cycle-3.txt" "SCOPE: WARN — src/outro.txt" "ciclo 2 reprovado por escopo: a causa vai ao ciclo 3"
+  assert_not_contains "$d/out.log" "Gate 3 (aviso) — SCOPE" "no ciclo 2 SCOPE nao e so aviso"
+  assert_contains "$d/repo/.phases/prompts/phase-01.cycle-2.txt" "Altere so os arquivos que as tasks da fase pedem" "prompt de correcao limita os arquivos"
+fi
+
+# ---------------------------------------------------------------------------
+# 54. TERM no meio da sessao (o TaskStop do Claude Code manda TERM e SIGKILL
+#     ~1 s depois): o trap roda na hora, o run.tsv fecha como failed e a
+#     sessao recebe TERM. Com o engine em primeiro plano o trap esperava ela.
+# ---------------------------------------------------------------------------
+if case_enabled stop-mid-session; then
+  header "54. TERM no meio da sessao fecha o run.tsv na hora e para o engine"
+  d=$(new_case stop-mid-session)
+  (
+    cd "$d/repo" || exit 1
+    exec env -u RALPH_TEST_CMD -u RALPH_MAX_CYCLES \
+      PATH="$d/bin:$PATH" MOCK_STATE="$d/state" MOCK_SCENARIO=slow-term \
+      MOCK_TEST_CMD="$d/test.sh" RALPH_VERIFY=off \
+      bash "$RALPH" --engine claude --test-cmd "$d/test.sh" > "$d/out.log" 2>&1
+  ) &
+  ralph_pid=$!
+  for _ in $(seq 1 100); do [ -f "$d/state/slow_midpoint" ] && break; sleep 0.2; done
+  kill -TERM "$ralph_pid" 2>/dev/null
+  # ate 3 s (o ralph antigo so fecha quando a sessao de 6 s acaba)
+  for _ in $(seq 1 15); do
+    cp "$d/repo/.phases/state/run.tsv" "$d/snap.tsv" 2>/dev/null || : > "$d/snap.tsv"
+    grep -q "$(printf 'META\tstatus\tfailed')" "$d/snap.tsv" && break
+    sleep 0.2
+  done
+  wait "$ralph_pid" 2>/dev/null
+  # o mock so roda o trap quando o `sleep 1` dele acaba
+  for _ in $(seq 1 15); do [ -f "$d/state/engine_term" ] && break; sleep 0.2; done
+  assert_contains "$d/snap.tsv" "$(printf 'META\tstatus\tfailed')" "ate 3 s depois do TERM o run.tsv ja diz failed"
+  if [ -f "$d/state/engine_term" ]; then ok "a sessao recebeu TERM (nao fica orfa editando o repo)"; else bad "a sessao recebeu TERM (nao fica orfa editando o repo)"; fi
 fi
 
 # ---------------------------------------------------------------------------

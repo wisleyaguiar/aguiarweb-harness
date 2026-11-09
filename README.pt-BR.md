@@ -128,14 +128,14 @@ Produz, sob `.spec/features/<slug>/`:
 | Artefato | Conteúdo |
 |---|---|
 | `SPEC.md` | Especificação formal em GEARS, com seções RIGID/FLEXIBLE, diagramas AS IS / TO BE e acceptance criteria binários |
-| `PLAN.md` | Decomposição de tasks consciente da arquitetura, com fases de dependência, riscos e critérios de validação |
+| `PLAN.md` | Decomposição de tasks consciente da arquitetura, com fases do tamanho de uma sessão do ralph, riscos e critérios de validação |
 | `PHASES.md` | Visão do PLAN no formato executável pelo `ralph.sh` |
 | `openapi.yaml` / `service.proto` / `asyncapi.yaml` | Contratos formais, quando a SPEC declara superfície de API (condicional) |
 
 Características:
 
 - **Sem issue tracker** — a descrição confirmada + ACs são a fonte de verdade. Nada de Jira.
-- **Tier de complexidade** (`light` / `standard` / `complete`) classificado por sinais objetivos (nº de requisitos, multi-repo, contratos, mensageria); ajusta a profundidade da SPEC, a obrigatoriedade do clarifier e a emissão de contratos.
+- **Tier de complexidade** (`light` / `standard` / `complete`) classificado por sinais objetivos (nº de requisitos, tamanho, multi-repo, contratos, mensageria), mostrado com o sinal que o decidiu para você corrigir; uma mudança pequena (≤ 5 arquivos, sem mudar o schema, sem rota de API) é `light` qualquer que seja o nº de requisitos; ajusta a profundidade da SPEC, a obrigatoriedade do clarifier e a emissão de contratos.
 - **Checkpoints humanos** em cada etapa: confirmação do input normalizado, aprovação da SPEC, resolução de ambiguidades, confirmação da decomposição.
 - **Clarifier em duas fases** — o agente analisa a SPEC e devolve perguntas priorizadas; o roteador as apresenta ao desenvolvedor e re-invoca o agente com as respostas, que atualiza a SPEC in-place.
 - **Revisão do plano sem contexto** (`standard` / `complete`) — o `plan-reviewer` lê só o que a sessão do `ralph.sh` lê (docs do projeto, cadeia init, SPEC, PLAN, PHASES), parafraseia o plano e aponta decisões deixadas ao implementador, arquivos que não existem e critérios de aceite que não dá para conferir. Blockers voltam ao planner uma vez; o resto chega ao checkpoint da decomposição.
@@ -182,12 +182,16 @@ Lê o que o último run do `ralph.sh` deixou no disco — `.phases/state/run.tsv
 
 | Sinal | Mudança proposta |
 |---|---|
+| Fase `blocked` (`TASK <n>: BLOCKED`) | Reescrever o critério de aceite que o verificador citou; nem ciclo de correção nem modelo mais forte passa nele |
 | Fase falhou ou virou commit `wip(phase-N)` | As tasks ainda abertas, no topo da lista |
 | Gate 2 pulado (sem comando de teste) | Definir `test_cmd` no Stack Profile ou passar `--test-cmd` |
 | Uma task segue `INCOMPLETE` entre ciclos | Dividir a fase ou deixar a task mais precisa |
 | `STANDARDS: WARN` | Regra de lint, hook ou teste para regra mecânica; uma linha no `AGENTS.md` para questão de julgamento |
 | `SCOPE: WARN` | Task faltando ou escrita de forma vaga |
 | A sessão procurou nos arquivos errados | Um ponteiro de navegação no `AGENTS.md`, ou rodar `/ai-context` de novo |
+| Uma fase só passou depois de subir o modelo, e a causa não era critério nem escopo | Subir a linha `**Route:**` dela |
+
+Sempre termina com uma tabela de custo: tempo, tempo de API e custo de cada sessão de implementação, por modelo (engine claude). Um run limpo também mostra para onde foi o dinheiro.
 
 Só leitura: ele propõe, você aplica. Cobre só o último run, porque o `ralph.sh` apaga `.phases/` no início de cada run.
 
@@ -224,9 +228,9 @@ Sem argumento, resolve o input nesta ordem: `.spec/init/project-phases.md` → `
 | 0 | O engine terminou de verdade? | claude: `is_error` no JSON de resultado; agy: `status` no JSON de saída; codex: exit code |
 | 1 | A sessão escreveu código? | Assinatura da árvore antes/depois. **Sinal, não veredito** — fase já implementada faz o engine (corretamente) não escrever nada; o sinal alimenta a causa do ciclo de correção |
 | 2 | A suite de testes passa? | Rodada **pelo ralph**, fora da sessão do agente — o agente não pode "mentir verde" |
-| 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`). Também emite as linhas `SCOPE` (arquivos que nenhuma task pede) e `STANDARDS` (regras do `AGENTS.md`/`CLAUDE.md`): um `WARN` aparece no log e nunca reprova a fase |
+| 3 | Cada task está de fato no código? | Sessão verificadora independente, read-only, que emite `TASK <n>: DONE/INCOMPLETE/BLOCKED` por task. Roda em toda fase por default (`RALPH_VERIFY=always`); no engine claude usa modelo barato (`sonnet`). Também emite as linhas `SCOPE` (arquivos que nenhuma task pede) e `STANDARDS` (regras do `AGENTS.md`/`CLAUDE.md`): um `WARN` aparece no log. Do ciclo 2 em diante, `SCOPE: WARN` reprova o gate: qualquer arquivo que a fase mudou e nenhuma task pede, mesmo um que o ciclo 1 mudou. `BLOCKED` quer dizer que o critério de aceite contradiz o requisito: a fase termina como `blocked`, sem ciclo de correção, e você corrige o critério no documento da fase |
 
-Qualquer gate vermelho → **ciclo de correção**: sessão nova recebe a fase inteira + a causa real da falha (nunca "os testes falharam" genérico). Quando o gate 3 reprova uma task que ele aprovou num ciclo anterior, a causa diz que a última correção a quebrou. Default: 3 ciclos por fase.
+Qualquer gate vermelho → **ciclo de correção**: sessão nova recebe a fase inteira + a causa real da falha (nunca "os testes falharam" genérico). Quando o gate 3 reprova uma task que ele aprovou num ciclo anterior, a causa diz que a última correção a quebrou. Quando as tasks listam arquivos em `Arquivos:`, a sessão de correção só pode mexer neles, e nos testes que elas pedem. O `BLOCKED` do gate 3 é a exceção: a fase termina sem ciclo de correção. Default: 3 ciclos por fase.
 
 Gates verdes com árvore limpa → fase já estava implementada em HEAD: marcada como feita, sem commit.
 
@@ -265,8 +269,18 @@ Projeto Laravel Sail: a suite roda **dentro do container** (`vendor/bin/sail tes
 | `RALPH_ROUTE_KEY` | Chave da API, obrigatória com `RALPH_ROUTE_API`. O ralph tira a chave do ambiente, então as sessões do engine nunca a veem |
 | `RALPH_ROUTE_URL` | Endpoint da API (default por API; só `https://`) |
 | `RALPH_ROUTE_MODEL` | O modelo que decide: `haiku` no claude; `gpt-6-luna` (openai) ou `jev-latest` (jev) na API |
+| `RALPH_ISOLATE` | Só claude. `1` (default): as sessões ignoram a sua config de `~/.claude/` (veja abaixo). `0`: carrega tudo, como antes |
 
 Durante cada sessão, o ralph exporta `RALPH_ENGINE`, `RALPH_PHASE_TITLE`, `RALPH_PHASE_NUM`, `RALPH_PHASE_TOTAL`, `RALPH_PHASE_ATTEMPT` e `RALPH_PHASE_MAX_ATTEMPTS` — úteis para hooks de notificação (ex.: n8n).
+
+No engine claude, toda sessão (implementação, verificador e decisão da rota) roda isolada da sua config de usuário. O ralph passa `--setting-sources project,local --strict-mcp-config`, e também `--mcp-config .mcp.json` quando a raiz do projeto tem um. Plugins, servidores MCP, hooks, settings e o `CLAUDE.md` do seu `~/.claude/` não carregam. O `CLAUDE.md` e o `.claude/settings*.json` do projeto continuam valendo. O hook `sail-guard` do próprio bc-harness continua rodando: quando o `sail-guard.sh` está ao lado do `ralph.sh`, o ralph passa ele com `--settings`. A sessão abre mais rápido, leva bem menos definições de ferramenta e não segue regras pessoais que não são do projeto. Cuidados:
+
+- As sessões rodam com `--dangerously-skip-permissions`. Um hook de proteção que mora só no `~/.claude/settings.json` deixa de valer: mova para o `.claude/settings.json` do projeto. Vale o mesmo para hooks de notificação.
+- Uma fase que precisa de um servidor MCP (um navegador, por exemplo) precisa dele no `.mcp.json` do projeto.
+- Um plugin instalado de forma global carrega quando o projeto ativa ele no `.claude/settings.json` (`"enabledPlugins": {"nome@marketplace": true}`).
+- O servidor MCP de um plugin fica de fora mesmo assim: o `--strict-mcp-config` corta ele. Copie cada servidor do `.mcp.json` do plugin para dentro de `mcpServers` no `.mcp.json` do projeto, e troque `${CLAUDE_PLUGIN_ROOT}` pelo caminho onde o plugin está instalado.
+- O `env` e o `apiKeyHelper` do `~/.claude/settings.json` também não valem. Se você chega na API por eles (um gateway, Bedrock, Vertex), exporte as variáveis no shell ou use `RALPH_ISOLATE=0`.
+- `RALPH_ISOLATE=0` carrega tudo, como antes.
 
 ### Modelo e esforço por fase (engine claude)
 
@@ -348,7 +362,7 @@ A sessão roda com `--output-format stream-json`, que emite eventos linha a linh
 3. **Reserva observacional** — sem marcador e sem lista, o ralph deduz pelo que o agente edita. Um plano do `/plan` declara `Arquivos:` em cada item, e é esse casamento (caminho editado ↔ arquivo declarado pela task) que dá a granularidade; sem a declaração, cai no enunciado da task. Ao entrar numa task, as anteriores contam como concluídas — o agente trabalha em ordem, e nem toda task tem arquivo próprio.
 4. **Sinal de vida**: assim que a sessão abre, a task 1 aparece em execução — nunca uma fase inteira parada em "Pendente".
 
-No fim da fase, o **gate 3 tem a palavra final**: o veredito `TASK <n>: DONE/INCOMPLETE` do verificador sobrepõe marcador, lista e dedução. Uma task marcada como pronta que não está no código aparece como `! Incompleta`.
+No fim da fase, o **gate 3 tem a palavra final**: o veredito `TASK <n>: DONE/INCOMPLETE/BLOCKED` do verificador sobrepõe marcador, lista e dedução. Uma task marcada como pronta que não está no código aparece como `! Incompleta`.
 
 Ou seja: durante a fase o painel mostra a intenção do agente; ao fim da fase mostra a verdade verificada.
 
