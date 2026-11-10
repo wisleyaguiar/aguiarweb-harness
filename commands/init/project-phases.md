@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 
 # init:project-phases
 
-This is a high-stakes planning task: the document you produce is fed to AI agents that build the whole project from it. Use the highest reasoning effort available. Do not rush. Precision, completeness, and faithful coverage of every source document matter more than brevity.
+The document you produce is fed to AI agents that build the whole project from it. Precision, completeness, and faithful coverage of every source document matter more than brevity.
 
 You are helping a developer turn the project spec into a **complete, phased implementation plan**. This document is the fourth artifact of the project spec. It builds on the first three (and any design specs) and becomes the ordered backlog AI agents implement, phase by phase, referenced by number.
 
@@ -117,7 +117,7 @@ Size each phase so a single AI agent can implement it in **one focused session, 
 Working heuristic: a phase (parent + all its sub-phases) covers **one feature area or one foundation layer** and stays around **10–15 tasks**. Beyond that, split into more top-level phases.
 
 - **Sub-phases count toward their parent phase's session.** A parent phase plus all its sub-phases together must still fit one session. If the total grows too large, split it into more top-level phases instead of overloading one parent.
-- Prefer more, well-scoped phases over a few oversized ones. **Any number of phases is fine** as long as each is detailed enough to implement everything in the description, stories, and schema with high quality and precision.
+- Do not split below that size: each phase costs a fresh `ralph.sh` session plus its test and verifier gates. Open a new phase when the current one is full or the next work is a different feature area.
 - Keep each phase independently implementable and, where possible, independently verifiable.
 
 ### Numbering

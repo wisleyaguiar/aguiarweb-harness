@@ -133,17 +133,18 @@ Produz, sob `.spec/features/<slug>/`:
 | Artefato | Conteúdo |
 |---|---|
 | `SPEC.md` | Especificação formal em GEARS, com seções RIGID/FLEXIBLE, diagramas AS IS / TO BE e acceptance criteria binários |
-| `PLAN.md` | Decomposição de tasks consciente da arquitetura, com fases do tamanho de uma sessão do ralph, riscos e critérios de validação |
-| `PHASES.md` | Visão do PLAN no formato executável pelo `ralph.sh` |
+| `PLAN.md` | O que vale para várias tasks: diagrama TO BE, tabela de fases (do tamanho de uma sessão do ralph), riscos, pré-requisitos manuais, dúvidas abertas, premissas |
+| `PHASES.md` | As tasks — a única cópia — no formato que o `ralph.sh` executa: arquivos, mudança, cobertura, critério de aceite, testes e risco de cada task |
 | `openapi.yaml` / `service.proto` / `asyncapi.yaml` | Contratos formais, quando a SPEC declara superfície de API (condicional) |
 
 Características:
 
 - **Sem issue tracker** — a descrição confirmada + ACs são a fonte de verdade. Nada de Jira.
-- **Tier de complexidade** (`light` / `standard` / `complete`) classificado por sinais objetivos (nº de requisitos, tamanho, multi-repo, contratos, mensageria), mostrado com o sinal que o decidiu para você corrigir; uma mudança pequena (≤ 5 arquivos, sem mudar o schema, sem rota de API) é `light` qualquer que seja o nº de requisitos; ajusta a profundidade da SPEC, a obrigatoriedade do clarifier e a emissão de contratos.
+- **Tier de complexidade** (`light` / `standard` / `complete`) classificado por sinais objetivos (nº de requisitos, tamanho, multi-repo, contratos, mensageria), mostrado com o sinal que o decidiu para você corrigir; uma mudança pequena (≤ 5 arquivos, sem mudar o schema, sem rota de API) é `light` qualquer que seja o nº de requisitos, e itens pequenos (≤ 2 arquivos cada) contam como um só; ajusta a profundidade da SPEC, se a análise do clarifier roda e a emissão de contratos.
 - **Checkpoints humanos** em cada etapa: confirmação do input normalizado, aprovação da SPEC, resolução de ambiguidades, confirmação da decomposição.
-- **Clarifier em duas fases** — o agente analisa a SPEC e devolve perguntas priorizadas; o roteador as apresenta ao desenvolvedor e re-invoca o agente com as respostas, que atualiza a SPEC in-place.
-- **Revisão do plano sem contexto** (`standard` / `complete`) — o `plan-reviewer` lê só o que a sessão do `ralph.sh` lê (docs do projeto, cadeia init, SPEC, PLAN, PHASES), parafraseia o plano e aponta decisões deixadas ao implementador, arquivos que não existem e critérios de aceite que não dá para conferir. Blockers voltam ao planner uma vez; o resto chega ao checkpoint da decomposição.
+- **Clarifier** — quando a SPEC tem marcadores `[NEEDS CLARIFICATION]`, cada um traz as opções e uma sugestão, e o roteador pergunta direto. Sem marcadores, no `complete` (ou quando você relata dúvidas), o clarifier primeiro analisa a SPEC e devolve perguntas priorizadas. Nos dois casos, o clarifier aplica as suas respostas na SPEC in-place.
+- **Revisão do plano sem contexto** (`standard` / `complete`) — o `plan-reviewer` lê só o que a sessão do `ralph.sh` lê (docs do projeto, cadeia init, SPEC, PLAN, PHASES), parafraseia o plano e aponta decisões deixadas ao implementador, arquivos que não existem e critérios de aceite que não dá para conferir. Blockers voltam ao planner uma vez, que edita só as tasks citadas; a rodada 2 confere só os achados da rodada 1. O resto chega ao checkpoint da decomposição.
+- **Controle de custo** — o roteador só confere quais arquivos existem e nunca os lê. O specifier escreve um mapa do código (`.handoff/exploration.md`) que o clarifier e o planner leem antes do código. SPEC e PLAN apontam o código por símbolo, nunca por número de linha. No Claude Code, o clarifier que aplica respostas e as correções do planner rodam em `sonnet`, salvo se você pediu outros modelos.
 - **Gate de arquitetura** — exige `AGENTS.md` / `docs/agents/` (ou avisa e marca `architecture_reference_status: missing`). Sem contexto de arquitetura o pipeline nunca planeja em silêncio. Também lista os commits do ralph feitos desde o último commit que mexeu na árvore, para você decidir se roda `/ai-context` de novo; nunca bloqueia.
 - **Prontidão para o ralph** — no checkpoint da decomposição, o `/plan` pergunta se o ralph vai rodar o plano com `--engine claude`. Se sim, o resumo lista o que uma task precisa e a [sessão isolada](#isolamento-da-sessão-engine-claude) não vai achar: um servidor MCP que falta no `.mcp.json`, uma skill fora do `.claude/skills/` e dos plugins do projeto, um comando de teste. Só sugere; quem aplica é você.
 - **Nunca escreve código de aplicação.** O fechamento aponta o handoff de execução:
@@ -176,7 +177,7 @@ Gera ou atualiza 11 artefatos a partir do **código implementado** (nunca lê `.
 
 Regras centrais:
 
-- **Idempotente** — upsert seguro; re-rodar atualiza só o que sofreu drift.
+- **Idempotente** — upsert seguro; re-rodar atualiza só o que sofreu drift. Em `docs/agents/`, o re-run confere cada fato contra o código, mantém o texto do que ainda vale e edita só o resto, para o diff mostrar só mudanças reais.
 - **Documenta a realidade (AS IS)** — código, manifests, CI e configs são as únicas fontes; nunca inventa, nunca prescreve. Uma regra de negócio deduzida de um padrão, e não escrita no código, ganha `(inferida)` no `domain_rules.md`; o `/plan` confirma no código ou pergunta a você antes de virar requisito.
 - **Contrato de ownership** — todo arquivo gerado carrega banner na linha 3. Arquivo sem banner (escrito à mão) nunca é sobrescrito; `--adopt` incorpora as regras concretas dele à árvore gerada e assume a posse.
 - **Preserva blocos de terceiros** — regiões `<tag>...</tag>` (ex.: Laravel Boost) são re-anexadas verbatim na regeneração.
