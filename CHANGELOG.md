@@ -4,6 +4,8 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-10
+
 ### Changed
 
 - `/plan` costs less, after a real run took 2.1M subagent tokens and about 2h35 (13 agents) for an 11-item feature:
