@@ -4,6 +4,21 @@ All notable changes to bc-harness are documented here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- `/plan` costs less, after a real run took 2.1M subagent tokens and about 2h35 (13 agents) for an 11-item feature:
+  - The router only runs `test -f` on the project docs and the init chain. It no longer reads them into its own context.
+  - Clarification: when the SPEC has markers, the router asks them in the same round as the SPEC approval and runs the clarifier only to apply the answers. Each marker now carries an id (`M1`), its options, and a suggestion; a marker without options (an older SPEC) is asked as an open question. The analysis runs only on a SPEC with no markers, on `complete` or when the developer reports doubts. Applying answers never writes a new marker: a new doubt comes back as a `Q-new:` line, with one more resolve at most; later ones go to the plan checkpoint.
+  - The specifier writes a code map, `.handoff/exploration.md`. The clarifier and the planner read it before the code, and the plan reviewer never sees it. Findings from helper agents enter the map marked `(?)` until the specifier confirms them. Regenerating the SPEC deletes the map. The specifier and the planner grep the init chain instead of reading all of it.
+  - The specifier and the planner know what `ralph.sh` can do: no failing-test commit, no production or live data, no manual step inside a phase. A step only a person can do goes to the SPEC Scope and to a new PLAN section, `## Pré-requisitos manuais`. The router shows those steps at the plan checkpoint and before the ralph command, and the plan reviewer treats the files they produce as existing.
+  - SPEC, PLAN, and PHASES anchor code by path and symbol, never by line number. PLAN task fields fit one or two lines.
+  - Fix mode: after a review, or for uncovered ids, the planner gets only the SPEC, PLAN, PHASES, and the report or ids, edits only the named tasks (it gains the `Edit` tool), and returns the `revised:` task ids. Review round 2 reads the round-1 report, the revised tasks, and the planner's answers, and keeps the round-1 paraphrase.
+  - On Claude Code, the answer-applying clarifier and the planner's fixes run on `sonnet`. A model the developer named for a role wins, and a fix that must settle a decision left open inherits the main model.
+  - Small ACs (≤ 2 files each, no schema, no route) count as one for the tier; this lowers `complete` to `standard` at most, never to `light`. Checkpoint 3 flags them so the developer can take them out of the feature.
+  - A missing architecture source is no longer a marker: the specifier writes it in `## Metadata`, since the developer already chose at the architecture gate.
+  - The router confirms with one Grep any code claim from another agent before it shows the claim to the developer.
+- `/init:project-phases` drops "use the highest reasoning effort / do not rush", and no longer says "prefer more phases": each phase costs a ralph session plus its gates.
+
 ## [0.10.0] - 2026-11-09
 
 ### Added

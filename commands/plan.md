@@ -48,11 +48,11 @@ Classify from signals, not judgment. Signals straddle tiers → pick the **highe
 | `standard` | 4–10 RFs AND single-repo AND optional contract / optional messaging |
 | `complete` | 11+ RFs OR multi-repo OR multiple formal contracts OR domain-heavy (≥ 2 bounded contexts) |
 
-Before `specifier` runs, the RF count is uncertain — use the confirmed AC count as proxy.
+Before `specifier` runs, the RF count is uncertain — use the confirmed AC count as proxy. ACs that are each a small surface on their own (≤ 2 files, no schema or migration, no API route: a label, a color, a removed line) count as one together. This lowers `complete` to `standard` at most; it never makes a feature `light`.
 
 **Small surface**: ≤ 5 files touched (estimated from the description and ACs), no schema or migration change, and no new or changed API route. It makes a story `light` whatever its RF count: thin requirements (a title, a text, a test, a doc line) inflate the count, not the work. It overrides the RF count only; multi-repo, contracts, messaging, and domain-heavy still win, and the straddle rule does not apply against it. Any of the three unknown → it does not hold; use the count.
 
-Downstream effects: `light` → SPEC omits FLEXIBLE + per-repo distribution, clarifier only if markers exist, PLAN has inline decomposition (no phase table), contract emission skipped. `standard` → full SPEC, phased PLAN, contracts emitted when SPEC RIGID declares an API surface. `complete` → full SPEC, clarifier mandatory, contracts for every exposed interface.
+Downstream effects: `light` → SPEC omits FLEXIBLE + per-repo distribution, PLAN has inline decomposition (no phase table), contract emission skipped. `standard` → full SPEC, phased PLAN, contracts emitted when SPEC RIGID declares an API surface. `complete` → full SPEC, clarifier analysis when the SPEC has no markers (§6), contracts for every exposed interface.
 
 **Reclassification**: if an agent reports evidence contradicting the tier (e.g. `specifier` finds 8 RFs on a `light` story that also changes the schema, adds or changes an API route, or touches more than 5 files), do not silently upgrade — report the delta to the developer, confirm, and re-delegate with the corrected tier.
 
@@ -67,7 +67,7 @@ Resolve the description per the Input table. Then derive:
 - `slug` — kebab-case from the summary, ≤ 50 chars.
 - `tier` — per the table above (AC count proxy, or small surface), plus the signal that set it.
 
-Single parallel probe batch (Bash `test -f` + Read only what exists):
+One Bash `test -f` batch. Never Read these files: the agents read what they need, and every file you read stays in your context for the whole run.
 
 - `AGENTS.md`, `docs/agents/architecture.md`, `docs/agents/domain_rules.md`, `.github/copilot-instructions.md`
 - Init chain: `.spec/init/project-description.md`, `.spec/init/user-stories.md`, `.spec/init/database-schema.md`, `.spec/init/project-phases.md`
@@ -81,9 +81,11 @@ Persist the resolved **paths** in pipeline context. Subsequent steps never re-pr
 - Only `SPEC.md` exists → ask: reuse it (skip to §6/§7) or regenerate.
 - Neither → continue.
 
+Regenerating the SPEC → `rm -f .spec/features/[slug]/.handoff/exploration.md` first: a stale map misleads the new run.
+
 ### 3 — Checkpoint: confirm normalized input
 
-Present `summary`, the ACs (drafted ones flagged), `slug`, and `tier` with the signal that set it (e.g. `light — small surface: ~4 files, no schema, no API`, or `standard — 6 ACs`), and say the tier can be corrected here. The developer confirms or corrects. **Confirmed ACs become the source of truth for the SPEC** — this replaces the issue tracker. Do not delegate before confirmation.
+Present `summary`, the ACs (drafted ones flagged), `slug`, and `tier` with the signal that set it (e.g. `light — small surface: ~4 files, no schema, no API`, or `standard — 6 ACs`), and say the tier can be corrected here. Flag the small-surface ACs: the developer may move them out of the feature and do them directly, which keeps the SPEC and PLAN that every agent reads smaller. The developer confirms or corrects. **Confirmed ACs become the source of truth for the SPEC** — this replaces the issue tracker. Do not delegate before confirmation.
 
 ### 4 — Architecture gate
 
@@ -99,7 +101,7 @@ Present `summary`, the ACs (drafted ones flagged), `slug`, and `tier` with the s
 
 ### 5 — Delegate to `specifier`
 
-**Input** (paths + short prose, see Handoff budget): confirmed summary + ACs, `slug`, `tier`, architecture reference paths (or `missing` flag), init chain paths that exist, description file path when the input was a file.
+**Input** (paths + short prose, see Handoff budget): confirmed summary + ACs, `slug`, `tier`, architecture reference paths (or `missing` flag), init chain paths that exist, description file path when the input was a file, and the exploration map path `.spec/features/[slug]/.handoff/exploration.md`. The specifier writes the map; when helper agents already explored the code, save their findings there first, each line ending in `(?)`, so the specifier confirms and extends the map instead of searching again.
 
 **Verify on disk** (yourself, Bash):
 
@@ -110,23 +112,30 @@ grep -q '^## RIGID' .spec/features/[slug]/SPEC.md
 grep -q '^## TO BE' .spec/features/[slug]/SPEC.md
 ```
 
-**Human checkpoint** — present the returned summary (RF/UI/RNF count, marker count, tier); developer approves before proceeding. Scope grew beyond the confirmed ACs → stop and propose splitting.
+**Human checkpoint** — present the returned summary (RF/UI/RNF count, marker count, tier); developer approves before proceeding. Markers > 0 → ask them in the same round as this approval (§6, first row). Scope grew beyond the confirmed ACs → stop and propose splitting.
 
 ### 6 — (Conditional) Delegate to `clarifier`
 
-Run when `grep -c '\[NEEDS CLARIFICATION\]' SPEC.md` > 0, OR tier is `complete`, OR the developer reports doubts. Otherwise skip.
+The subagent never talks to the developer; you do. Pick the first row that matches, once, on the SPEC as the specifier returned it — a SPEC left with no markers after resolve does not go to analyze:
 
-Two-phase — the subagent never talks to the developer; you do:
+| SPEC state | Steps |
+|---|---|
+| markers > 0 (`grep -c '\[NEEDS CLARIFICATION\]' SPEC.md`) | `grep -n` the markers. Each one carries an id (`M1`), its question, options, and a suggestion: ask them directly (AskUserQuestion, ≤ 4 per call), then **resolve** with `M<n> → answer`. A marker without options (an older SPEC) → ask it as an open question in plain text. No analyze: the specifier already found the doubts. |
+| no markers, and tier `complete` or the developer reports doubts | **analyze** → ask its questions → **resolve** |
+| otherwise | skip §6 |
 
-1. **analyze** — clarifier reads the SPEC and returns prioritized questions (no edits).
-2. You present the questions to the developer (AskUserQuestion, one batch) and collect answers.
-3. **resolve** — re-invoke clarifier with the answers (inline when short; otherwise write `.spec/features/[slug]/.handoff/clarifier-answers.md` and pass the path). It updates the SPEC in-place and increments the version.
+- **analyze** — clarifier reads the SPEC and returns prioritized questions (no edits).
+- **resolve** — clarifier gets the answers (inline when short; otherwise write `.spec/features/[slug]/.handoff/clarifier-answers.md` and pass the path), updates the SPEC in-place, and increments the version.
+
+Resolve returns `Q-new:` lines when applying an answer raised a new doubt (it never writes a new marker) → ask them, then run **resolve** once more. Never a third resolve: `Q-new:` lines from the second one go to the §7 checkpoint as open questions.
 
 Verify after resolve: `grep -c '\[NEEDS CLARIFICATION\]'` — remaining markers → warn the developer explicitly before continuing.
 
 ### 7 — Delegate to `planner`
 
-**Input**: SPEC.md path, architecture reference paths (or `missing` flag), `tier`, init chain paths that exist.
+**Input**: SPEC.md path, architecture reference paths (or `missing` flag), `tier`, init chain paths that exist, the exploration map path when the file exists.
+
+**Fix mode input** (re-delegations below): only the SPEC, PLAN, and PHASES paths, plus the report path or the `uncovered:` ids. The planner returns `revised: T03,T07` — the task ids it changed or added.
 
 **Verify on disk**:
 
@@ -151,15 +160,15 @@ done
 
 When the planner reports contracts emitted, also `test -f` each reported contract path.
 
-Any `uncovered:` line → re-delegate to `planner` once with the same input plus those ids. Still uncovered → list them at the human checkpoint; the developer adds a task or accepts the gap.
+Any `uncovered:` line → re-delegate to `planner` once in fix mode with those ids. Still uncovered → list them at the human checkpoint; the developer adds a task or accepts the gap.
 
 **Plan review** (tier `standard` / `complete`; skip on `light`) — a fresh-context check that each phase can be built by a `ralph.sh` session, which reads only the project docs, the init chain, and the phase. The host cannot start a fresh subagent → skip it and say so at the checkpoint: a review in your own context is not independent.
 
-1. `mkdir -p .spec/features/[slug]/.handoff`, then delegate to `bc-harness:plan-reviewer` with: the PHASES/PLAN/SPEC paths, the `AGENTS.md` / `CLAUDE.md` and init chain paths that exist, the report path `.spec/features/[slug]/.handoff/plan-review.md`, and `round: 1`. Pass nothing else — not the description, the ACs, or your notes.
+1. `mkdir -p .spec/features/[slug]/.handoff`, then delegate to `bc-harness:plan-reviewer` with: the PHASES/PLAN/SPEC paths, the `AGENTS.md` / `CLAUDE.md` and init chain paths that exist, the report path `.spec/features/[slug]/.handoff/plan-review.md`, and `round: 1`. Pass nothing else — not the description, the ACs, the exploration map, or your notes.
 2. `test -f .spec/features/[slug]/.handoff/plan-review.md`.
-3. Blockers > 0 → re-delegate to `planner` with the same §7 input plus the report path, re-run the whole **Verify on disk** block, then re-run the reviewer once with `round: 2`. Never a third round.
+3. Blockers > 0 → re-delegate to `planner` in fix mode with the report path, re-run the whole **Verify on disk** block, then re-run the reviewer once with `round: 2` and the planner's `revised:` ids: it re-checks only the round-1 findings. Never a third round.
 
-**Human checkpoint** — present task count, phases, risks, test seams, and contract paths when emitted. When the plan review ran, Read `plan-review.md` and present its paraphrase and the open findings by severity; the developer compares the paraphrase with the intent. The developer confirms the decomposition and the test seams before closing. Ask one more question, once: will this plan run with `ralph.sh --engine claude`? (ralph's default engine is `codex`.)
+**Human checkpoint** — present task count, phases, risks, test seams, contract paths when emitted, and every step under PLAN's `## Pré-requisitos manuais` (the developer does them before ralph runs). When the plan review ran, Read `plan-review.md` and present its paraphrase and the open findings by severity; the developer compares the paraphrase with the intent. The developer confirms the decomposition and the test seams before closing. Ask one more question, once: will this plan run with `ralph.sh --engine claude`? (ralph's default engine is `codex`.)
 
 ### 8 — Summary
 
@@ -182,7 +191,7 @@ Emit one table:
 
 End the block with one line: hooks and rules that live only in `~/.claude` don't load either (README § Session isolation). Never read `~/.claude` to check them.
 
-Closing lines: unresolved markers count (when > 0), then the execution handoff — this command never implements; run (with `--engine claude` after `./ralph.sh` when the §7 answer was yes):
+Closing lines: unresolved markers count (when > 0), the `## Pré-requisitos manuais` steps (when any), then the execution handoff — this command never implements; run (with `--engine claude` after `./ralph.sh` when the §7 answer was yes):
 
 ```
 ./ralph.sh .spec/features/[slug]/PHASES.md
@@ -194,11 +203,22 @@ Closing lines: unresolved markers count (when > 0), then the execution handoff �
 - Agent → router: `path + summary ≤ 200 bytes`. Never inline artifact content; Read the file yourself if you need it.
 - Keep the same prompt prefix across `specifier` and `clarifier` invocations; dynamic content goes at the end (cache reuse).
 
+## Models
+
+Claude Code: set the Agent tool's `model` per call. A model the developer named for a role wins for that role. Other hosts ignore this table.
+
+| Call | Model |
+|---|---|
+| `clarifier` in **resolve** mode | `sonnet` — it applies answers, mechanical work |
+| `planner` in fix mode | `sonnet` — it edits the named tasks only. Inherit when a Blocker says a decision was left open: settling it takes judgment |
+| every other call | inherit |
+
 ## Rules
 
 - **Delegate plugin-namespaced** (`bc-harness:specifier`, `bc-harness:clarifier`, `bc-harness:planner`, `bc-harness:plan-reviewer`), never bare.
 - **Write only under `.spec/features/[slug]/`** (the router itself only under `.handoff/`) — never application code.
 - **No issue tracker** — the confirmed description + ACs are the source of truth; never invent an external reference.
+- **Check before you tell** — a claim about the code that you put to the developer (in a checkpoint or a question) and that came from another agent: confirm it with one Grep first.
 - Scope grows mid-planning → stop, propose splitting into smaller features and re-running `/plan` per slice.
 - Architecture references loaded → SPEC.md and PLAN.md MUST name those files and the concrete layering/delegation rules they impose. None available → warning, never silent.
 - **No git writes** — the developer reviews with `git diff` and commits manually.
