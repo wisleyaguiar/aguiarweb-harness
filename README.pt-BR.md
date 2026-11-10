@@ -133,8 +133,8 @@ Produz, sob `.spec/features/<slug>/`:
 | Artefato | Conteúdo |
 |---|---|
 | `SPEC.md` | Especificação formal em GEARS, com seções RIGID/FLEXIBLE, diagramas AS IS / TO BE e acceptance criteria binários |
-| `PLAN.md` | Decomposição de tasks consciente da arquitetura, com fases do tamanho de uma sessão do ralph, riscos e critérios de validação |
-| `PHASES.md` | Visão do PLAN no formato executável pelo `ralph.sh` |
+| `PLAN.md` | O que vale para várias tasks: diagrama TO BE, tabela de fases (do tamanho de uma sessão do ralph), riscos, pré-requisitos manuais, dúvidas abertas, premissas |
+| `PHASES.md` | As tasks — a única cópia — no formato que o `ralph.sh` executa: arquivos, mudança, cobertura, critério de aceite, testes e risco de cada task |
 | `openapi.yaml` / `service.proto` / `asyncapi.yaml` | Contratos formais, quando a SPEC declara superfície de API (condicional) |
 
 Características:
@@ -177,7 +177,7 @@ Gera ou atualiza 11 artefatos a partir do **código implementado** (nunca lê `.
 
 Regras centrais:
 
-- **Idempotente** — upsert seguro; re-rodar atualiza só o que sofreu drift.
+- **Idempotente** — upsert seguro; re-rodar atualiza só o que sofreu drift. Em `docs/agents/`, o re-run confere cada fato contra o código, mantém o texto do que ainda vale e edita só o resto, para o diff mostrar só mudanças reais.
 - **Documenta a realidade (AS IS)** — código, manifests, CI e configs são as únicas fontes; nunca inventa, nunca prescreve. Uma regra de negócio deduzida de um padrão, e não escrita no código, ganha `(inferida)` no `domain_rules.md`; o `/plan` confirma no código ou pergunta a você antes de virar requisito.
 - **Contrato de ownership** — todo arquivo gerado carrega banner na linha 3. Arquivo sem banner (escrito à mão) nunca é sobrescrito; `--adopt` incorpora as regras concretas dele à árvore gerada e assume a posse.
 - **Preserva blocos de terceiros** — regiões `<tag>...</tag>` (ex.: Laravel Boost) são re-anexadas verbatim na regeneração.

@@ -135,8 +135,8 @@ Produces, under `.spec/features/<slug>/`:
 | Artifact | Content |
 |---|---|
 | `SPEC.md` | Formal specification in GEARS syntax, with RIGID/FLEXIBLE sections, AS IS / TO BE diagrams, and binary acceptance criteria |
-| `PLAN.md` | Architecture-aware task decomposition with phases sized for one ralph session, risks, and validation criteria |
-| `PHASES.md` | The PLAN rendered in the format executable by `ralph.sh` |
+| `PLAN.md` | What spans tasks: TO BE diagram, phase table (phases sized for one ralph session), risks, manual prerequisites, open questions, assumptions |
+| `PHASES.md` | The tasks — their only copy — in the format `ralph.sh` executes: files, change, coverage, acceptance criterion, tests, and risk per task |
 | `openapi.yaml` / `service.proto` / `asyncapi.yaml` | Formal contracts, when the SPEC declares an API surface (conditional) |
 
 Key characteristics:
@@ -179,7 +179,7 @@ Generates or refreshes 11 artifacts from the **implemented code** (never reads `
 
 Core rules:
 
-- **Idempotent** — safe upsert; re-running updates only what drifted.
+- **Idempotent** — safe upsert; re-running updates only what drifted. In `docs/agents/`, a re-run checks each fact against the code, keeps the wording of what still holds, and edits only the rest, so the diff shows real changes.
 - **Documents reality (AS IS)** — code, manifests, CI, and configs are the only sources; never invents, never prescribes. A business rule deduced from a pattern, not stated in the code, gets `(inferida)` in `domain_rules.md`; `/plan` confirms it in the code or asks you before it becomes a requirement.
 - **Ownership contract** — every generated file carries a banner on line 3. A file without the banner (hand-written) is never clobbered; `--adopt` folds its concrete rules into the generated tree and takes ownership.
 - **Preserves third-party blocks** — `<tag>...</tag>` regions (e.g. Laravel Boost) are re-appended verbatim on regeneration.

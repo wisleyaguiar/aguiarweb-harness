@@ -59,7 +59,7 @@ Every generated file carries this banner on line 3:
 | On-disk state | Default | With `--adopt` |
 |---|---|---|
 | absent | create | create |
-| banner present (`owned`) | regenerate, byte-diff, update only if changed | same |
+| banner present (`owned`) | update only what drifted (see each writer's Update detection) | same |
 | exists without banner (`not-owned`) | skip + warn — never clobber hand-written files | fold its concrete rules into the generated tree, then overwrite (`adopted`) |
 
 ## Flow

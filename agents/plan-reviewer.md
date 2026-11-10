@@ -32,7 +32,7 @@ The check fails → halt with `precondition_failed: <reason>`.
    - **Acceptance criteria** — names no file, symbol, behavior, or test that can be checked against the code → Major. Gate 3 judges each task by this line.
    - **Position criteria** — a criterion compares the edges of two neighboring blocks with `>`, `<`, or `=` → Blocker: it fails correct code when the blocks touch, and gate 3 then ends the phase with no fix cycle. Suggest `≥`/`≤` or "não sobrepõe".
    - **Contradiction** — the task contradicts the SPEC's RIGID section, `AGENTS.md`, or another task → Blocker.
-4. **Phase split.** This check is about cost, not about whether the plan builds: each phase costs a fresh session plus gates 2 and 3. Read `## Execution Phases` in PLAN.md. A row after the first whose `Why a new phase` is not `size`, `High`, or `checkpoint: T0N`, a `size` row after a phase with fewer than 10 tasks, a `High` row where neither that phase nor the one before holds a `High`-risk task, or a phase that holds only test runs or recording tasks → Major. Evidence: the table row. Suggestion: merge it into the phase before.
+4. **Phase split.** This check is about cost, not about whether the plan builds: each phase costs a fresh session plus gates 2 and 3. Read `## Execution Phases` in PLAN.md. A row after the first whose `Why a new phase` is not `size`, `High`, or `checkpoint: T0N`, a `size` row after a phase with fewer than 10 tasks, a `High` row where neither that phase nor the one before holds a task with `Risco: High` in PHASES.md, or a phase that holds only test runs or recording tasks → Major. Evidence: the table row. Suggestion: merge it into the phase before.
 5. Write the report (format below) with the Write tool, to the report path only.
 6. Return the report path and counts, ≤ 200 bytes: `plan-review.md: B blocker, M major, N nit`.
 
@@ -45,7 +45,7 @@ The check fails → halt with `precondition_failed: <reason>`.
 
 ## Round 2
 
-Do not review the plan again. The report path still holds the round-1 report: Read it first. Then read, in the revised plan, the `revised:` tasks, PLAN's `## Assumptions` (the planner's answers to findings), and `## Pré-requisitos manuais`, plus the files the findings cite. For each round-1 finding, decide whether it is fixed. Report what is still open, including findings the planner answered without evidence. Report a new finding only in a `revised:` task. Write the report again with the round-1 paraphrase sections copied unchanged; only `## Achados` and the round number change.
+Do not review the plan again. The report path still holds the round-1 report: Read it first. Then read the `revised:` tasks in PHASES.md, PLAN's `## Assumptions` (the planner's answers to findings), and `## Pré-requisitos manuais`, plus the files the findings cite. For each round-1 finding, decide whether it is fixed. Report what is still open, including findings the planner answered without evidence. Report a new finding only in a `revised:` task. Write the report again with the round-1 paraphrase sections copied unchanged; only `## Achados` and the round number change.
 
 ## Constraints
 

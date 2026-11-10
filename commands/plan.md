@@ -19,7 +19,7 @@ Produce a complete plan — formal SPEC (GEARS RIGID/FLEXIBLE), resolved clarifi
 |---|---|---|
 | §5 | `bc-harness:specifier` | `.spec/features/[slug]/SPEC.md` |
 | §6 (conditional) | `bc-harness:clarifier` | `SPEC.md` updated in-place |
-| §7 | `bc-harness:planner` | `.spec/features/[slug]/PLAN.md` + `PHASES.md` (view executável pelo `ralph.sh`) + optional `openapi.yaml` / `service.proto` / `asyncapi.yaml` |
+| §7 | `bc-harness:planner` | `.spec/features/[slug]/PHASES.md` (as tasks, executável pelo `ralph.sh`) + `PLAN.md` + optional `openapi.yaml` / `service.proto` / `asyncapi.yaml` |
 | §7 (standard / complete) | `bc-harness:plan-reviewer` | `.spec/features/[slug]/.handoff/plan-review.md` |
 
 ## Input — `$ARGUMENTS`
@@ -52,7 +52,7 @@ Before `specifier` runs, the RF count is uncertain — use the confirmed AC coun
 
 **Small surface**: ≤ 5 files touched (estimated from the description and ACs), no schema or migration change, and no new or changed API route. It makes a story `light` whatever its RF count: thin requirements (a title, a text, a test, a doc line) inflate the count, not the work. It overrides the RF count only; multi-repo, contracts, messaging, and domain-heavy still win, and the straddle rule does not apply against it. Any of the three unknown → it does not hold; use the count.
 
-Downstream effects: `light` → SPEC omits FLEXIBLE + per-repo distribution, PLAN has inline decomposition (no phase table), contract emission skipped. `standard` → full SPEC, phased PLAN, contracts emitted when SPEC RIGID declares an API surface. `complete` → full SPEC, clarifier analysis when the SPEC has no markers (§6), contracts for every exposed interface.
+Downstream effects: `light` → SPEC omits FLEXIBLE + per-repo distribution, PHASES has one phase and PLAN no phase table, contract emission skipped. `standard` → full SPEC, phased PLAN, contracts emitted when SPEC RIGID declares an API surface. `complete` → full SPEC, clarifier analysis when the SPEC has no markers (§6), contracts for every exposed interface.
 
 **Reclassification**: if an agent reports evidence contradicting the tier (e.g. `specifier` finds 8 RFs on a `light` story that also changes the schema, adds or changes an API route, or touches more than 5 files), do not silently upgrade — report the delta to the developer, confirm, and re-delegate with the corrected tier.
 
@@ -77,7 +77,7 @@ Persist the resolved **paths** in pipeline context. Subsequent steps never re-pr
 
 ### 2 — Resume check
 
-- `PLAN.md` exists → report artifacts present (PHASES.md regenerates with PLAN.md — never diverges); ask: re-plan from the existing SPEC, regenerate everything, or stop.
+- `PLAN.md` exists → report artifacts present (the planner writes PLAN.md and PHASES.md together); ask: re-plan from the existing SPEC, regenerate everything, or stop.
 - Only `SPEC.md` exists → ask: reuse it (skip to §6/§7) or regenerate.
 - Neither → continue.
 
@@ -135,14 +135,13 @@ Verify after resolve: `grep -c '\[NEEDS CLARIFICATION\]'` — remaining markers 
 
 **Input**: SPEC.md path, architecture reference paths (or `missing` flag), `tier`, init chain paths that exist, the exploration map path when the file exists.
 
-**Fix mode input** (re-delegations below): only the SPEC, PLAN, and PHASES paths, plus the report path or the `uncovered:` ids. The planner returns `revised: T03,T07` — the task ids it changed or added.
+**Fix mode input** (re-delegations below): only the SPEC, PLAN, and PHASES paths, plus the report path, or the `invalid:` lines and `uncovered:` ids. The planner returns `revised: T03,T07` — the task ids it changed or added.
 
 **Verify on disk**:
 
 ```bash
 test -f .spec/features/[slug]/PLAN.md
 head -1 .spec/features/[slug]/PLAN.md | grep -q '^# Implementation Plan'
-grep -q '^## Tasks' .spec/features/[slug]/PLAN.md
 grep -q '^## TO BE' .spec/features/[slug]/PLAN.md
 
 # PHASES.md — ralph.sh contract (same heading format as .spec/init/project-phases.md)
@@ -150,8 +149,15 @@ test -f .spec/features/[slug]/PHASES.md
 grep -Eq '^## Phase [0-9]+: ' .spec/features/[slug]/PHASES.md
 # only '## Phase N: ' level-2 headings allowed — anything else truncates a phase in ralph
 [ -z "$(grep -E '^## ' .spec/features/[slug]/PHASES.md | grep -Ev '^## Phase [0-9]+: ')" ]
-# checkbox count == PLAN task count
-[ "$(grep -c '^- \[ \]' .spec/features/[slug]/PHASES.md)" -eq "$(grep -Ec '^### T[0-9]+' .spec/features/[slug]/PLAN.md)" ]
+# PHASES holds the only copy of the tasks — prints `invalid:` per task without a T0N id, or without exactly
+# one `Acceptance criteria:` and one `Risco: Low|Medium|High`; also for a file with no task or a duplicate id
+awk 'function end(){ if (t != "" && (id != 1 || a != 1 || r != 1)) print "invalid: " t }
+  /^- \[ \]/ { end(); t = $0; a = 0; r = 0; id = ($0 ~ /^- \[ \] T[0-9]+ /); n++; next }
+  /^## / { end(); t = "" }
+  /^[[:space:]]+Acceptance criteria:/ { a++ }
+  /^[[:space:]]+Risco: (Low|Medium|High)( |$)/ { r++ }
+  END { end(); if (!n) print "invalid: no tasks" }' .spec/features/[slug]/PHASES.md
+grep -oE '^- \[ \] T[0-9]+' .spec/features/[slug]/PHASES.md | sed 's/^- \[ \] //' | sort | uniq -d | sed 's/^/invalid: duplicate id /'
 # every RF-/UI- id defined under the SPEC's '## RIGID' is on some 'Cobre:' line — prints each uncovered id
 for id in $(sed -n '/^## RIGID/,/^## /p' .spec/features/[slug]/SPEC.md | grep -E '^[[:space:]]*- (\*\*)?(RF|UI)-[0-9]+' | grep -oE '(RF|UI)-[0-9]+' | sort -u); do
   grep 'Cobre:' .spec/features/[slug]/PHASES.md | grep -qw -- "$id" || echo "uncovered: $id"
@@ -160,7 +166,7 @@ done
 
 When the planner reports contracts emitted, also `test -f` each reported contract path.
 
-Any `uncovered:` line → re-delegate to `planner` once in fix mode with those ids. Still uncovered → list them at the human checkpoint; the developer adds a task or accepts the gap.
+Any `invalid:` or `uncovered:` line → re-delegate to `planner` once in fix mode with all of them in one call. Still present → list them at the human checkpoint; the developer fixes the task, adds one, or accepts the gap.
 
 **Plan review** (tier `standard` / `complete`; skip on `light`) — a fresh-context check that each phase can be built by a `ralph.sh` session, which reads only the project docs, the init chain, and the phase. The host cannot start a fresh subagent → skip it and say so at the checkpoint: a review in your own context is not independent.
 
@@ -220,6 +226,6 @@ Claude Code: set the Agent tool's `model` per call. A model the developer named 
 - **No issue tracker** — the confirmed description + ACs are the source of truth; never invent an external reference.
 - **Check before you tell** — a claim about the code that you put to the developer (in a checkpoint or a question) and that came from another agent: confirm it with one Grep first.
 - Scope grows mid-planning → stop, propose splitting into smaller features and re-running `/plan` per slice.
-- Architecture references loaded → SPEC.md and PLAN.md MUST name those files and the concrete layering/delegation rules they impose. None available → warning, never silent.
+- Architecture references loaded → SPEC.md and PLAN.md MUST name those files; the SPEC and the PHASES tasks carry the concrete layering/delegation rules they impose. None available → warning, never silent.
 - **No git writes** — the developer reviews with `git diff` and commits manually.
 - **No secrets** — never read `.env` or equivalents.
